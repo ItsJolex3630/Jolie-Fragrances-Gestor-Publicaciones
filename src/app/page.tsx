@@ -12,7 +12,6 @@ import {
   X,
   Check,
   Image as ImageIcon,
-  Filter,
   ArrowUpDown,
   Loader2,
   ZoomIn,
@@ -21,15 +20,15 @@ import {
   Crop,
   FileType,
   Settings2,
-  CheckSquare,
   Square,
+  Sparkles,
+  ChevronDown,
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import {
   Card,
   CardContent,
-  CardFooter,
 } from '@/components/ui/card';
 import {
   Dialog,
@@ -91,14 +90,14 @@ type ViewMode = 'grid' | 'list';
 type SortOption = 'newest' | 'oldest' | 'name' | 'size_asc' | 'size_desc';
 
 const ASPECT_RATIOS = [
-  { label: '1:1', value: '1:1', desc: 'Cuadrado (Instagram)' },
-  { label: '4:5', value: '4:5', desc: 'Retrato Instagram' },
-  { label: '9:16', value: '9:16', desc: 'Stories / Reels' },
-  { label: '16:9', value: '16:9', desc: 'Paisaje / YouTube' },
-  { label: '3:2', value: '3:2', desc: 'Fotografía estándar' },
-  { label: '2:3', value: '2:3', desc: 'Retrato estándar' },
-  { label: '3:4', value: '3:4', desc: 'Retrato' },
-  { label: '4:3', value: '4:3', desc: 'Paisaje clásico' },
+  { label: '1:1', value: '1:1', desc: 'Cuadrado (Instagram)', w: 20, h: 20 },
+  { label: '4:5', value: '4:5', desc: 'Retrato Instagram', w: 16, h: 20 },
+  { label: '9:16', value: '9:16', desc: 'Stories / Reels', w: 12, h: 21 },
+  { label: '16:9', value: '16:9', desc: 'Paisaje / YouTube', w: 24, h: 14 },
+  { label: '3:2', value: '3:2', desc: 'Fotografía estándar', w: 18, h: 12 },
+  { label: '2:3', value: '2:3', desc: 'Retrato estándar', w: 14, h: 21 },
+  { label: '3:4', value: '3:4', desc: 'Retrato', w: 15, h: 20 },
+  { label: '4:3', value: '4:3', desc: 'Paisaje clásico', w: 20, h: 15 },
 ];
 
 const FORMATS = [
@@ -121,19 +120,11 @@ function simplifyAspectRatio(ratio: string): string {
   const a = parseInt(parts[0]);
   const b = parseInt(parts[1]);
   if (isNaN(a) || isNaN(b)) return ratio;
-
-  // Try to match common ratios
   const r = a / b;
   const common: [number, number, string][] = [
-    [1, 1, '1:1'],
-    [4, 5, '4:5'],
-    [5, 4, '5:4'],
-    [3, 4, '3:4'],
-    [4, 3, '4:3'],
-    [2, 3, '2:3'],
-    [3, 2, '3:2'],
-    [9, 16, '9:16'],
-    [16, 9, '16:9'],
+    [1, 1, '1:1'], [4, 5, '4:5'], [5, 4, '5:4'],
+    [3, 4, '3:4'], [4, 3, '4:3'], [2, 3, '2:3'],
+    [3, 2, '3:2'], [9, 16, '9:16'], [16, 9, '16:9'],
   ];
   for (const [wa, wb, label] of common) {
     if (Math.abs(r - wa / wb) < 0.02) return label;
@@ -151,6 +142,8 @@ export default function Home() {
   const [uploading, setUploading] = useState(false);
   const [deleting, setDeleting] = useState<string | null>(null);
   const [bulkDownloading, setBulkDownloading] = useState(false);
+  const [cursorPos, setCursorPos] = useState({ x: 0, y: 0 });
+  const [cursorVisible, setCursorVisible] = useState(false);
 
   // Dialogs
   const [editDialogOpen, setEditDialogOpen] = useState(false);
@@ -170,6 +163,21 @@ export default function Home() {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
+
+  // Cursor glow
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      setCursorPos({ x: e.clientX, y: e.clientY });
+      if (!cursorVisible) setCursorVisible(true);
+    };
+    const handleMouseLeave = () => setCursorVisible(false);
+    window.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseleave', handleMouseLeave);
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseleave', handleMouseLeave);
+    };
+  }, [cursorVisible]);
 
   // Fetch images
   const fetchImages = useCallback(async () => {
@@ -199,11 +207,9 @@ export default function Home() {
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
-
     setUploading(true);
     let successCount = 0;
     let errorCount = 0;
-
     for (const file of Array.from(files)) {
       try {
         const formData = new FormData();
@@ -215,17 +221,11 @@ export default function Home() {
         errorCount++;
       }
     }
-
     setUploading(false);
     if (fileInputRef.current) fileInputRef.current.value = '';
     await fetchImages();
-
-    if (successCount > 0) {
-      toast({ title: 'Carga exitosa', description: `${successCount} imagen(es) subida(s)` });
-    }
-    if (errorCount > 0) {
-      toast({ title: 'Error', description: `${errorCount} imagen(es) fallaron al subir`, variant: 'destructive' });
-    }
+    if (successCount > 0) toast({ title: 'Carga exitosa', description: `${successCount} imagen(es) subida(s)` });
+    if (errorCount > 0) toast({ title: 'Error', description: `${errorCount} imagen(es) fallaron al subir`, variant: 'destructive' });
   };
 
   // Download single
@@ -261,7 +261,7 @@ export default function Home() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `imagenes-${Date.now()}.zip`;
+      a.download = `jolie-images-${Date.now()}.zip`;
       a.click();
       URL.revokeObjectURL(url);
       toast({ title: 'Descargado', description: `${selectedIds.size} imagen(es) descargadas en ZIP` });
@@ -280,11 +280,7 @@ export default function Home() {
       const res = await fetch(`/api/images/${image.id}`, { method: 'DELETE' });
       if (res.ok) {
         setImages((prev) => prev.filter((img) => img.id !== image.id));
-        setSelectedIds((prev) => {
-          const next = new Set(prev);
-          next.delete(image.id);
-          return next;
-        });
+        setSelectedIds((prev) => { const next = new Set(prev); next.delete(image.id); return next; });
         toast({ title: 'Eliminada', description: `${image.originalName} fue eliminada` });
       }
     } catch {
@@ -300,9 +296,7 @@ export default function Home() {
   const handleBulkDelete = async () => {
     const ids = Array.from(selectedIds);
     for (const id of ids) {
-      try {
-        await fetch(`/api/images/${id}`, { method: 'DELETE' });
-      } catch { /* continue */ }
+      try { await fetch(`/api/images/${id}`, { method: 'DELETE' }); } catch { /* continue */ }
     }
     setImages((prev) => prev.filter((img) => !selectedIds.has(img.id)));
     setSelectedIds(new Set());
@@ -318,19 +312,12 @@ export default function Home() {
       const res = await fetch(`/api/images/${editingImage.id}/edit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          aspectRatio: editAspectRatio,
-          format: editFormat,
-          quality: editQuality,
-        }),
+        body: JSON.stringify({ aspectRatio: editAspectRatio, format: editFormat, quality: editQuality }),
       });
       if (res.ok) {
         const newImage = await res.json();
         setImages((prev) => [newImage, ...prev]);
-        toast({
-          title: 'Imagen editada',
-          description: `Nueva versión creada con ratio ${editAspectRatio} en formato ${editFormat.toUpperCase()}`,
-        });
+        toast({ title: 'Imagen editada', description: `Nueva versión creada con ratio ${editAspectRatio} en formato ${editFormat.toUpperCase()}` });
         setEditDialogOpen(false);
         setEditingImage(null);
       } else {
@@ -344,27 +331,17 @@ export default function Home() {
     }
   };
 
-  // Toggle selection
   const toggleSelect = (id: string) => {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
+    setSelectedIds((prev) => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next; });
   };
 
   const toggleSelectAll = () => {
-    if (selectedIds.size === images.length) {
-      setSelectedIds(new Set());
-    } else {
-      setSelectedIds(new Set(images.map((img) => img.id)));
-    }
+    if (selectedIds.size === images.length) setSelectedIds(new Set());
+    else setSelectedIds(new Set(images.map((img) => img.id)));
   };
 
   const openEditDialog = (image: ImageData) => {
     setEditingImage(image);
-    // Set default format to same as original
     const fmt = FORMATS.find((f) => f.value === image.format);
     setEditFormat(fmt ? fmt.value : 'png');
     setEditAspectRatio('1:1');
@@ -378,37 +355,48 @@ export default function Home() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-background">
+    <div className="min-h-screen flex flex-col bg-[#0a0a0a] text-white">
+      {/* Cursor Glow */}
+      <div
+        className="cursor-glow"
+        style={{
+          transform: `translate3d(${cursorPos.x}px, ${cursorPos.y}px, 0)`,
+          opacity: cursorVisible ? 1 : 0,
+        }}
+      />
+
       {/* Header */}
-      <header className="sticky top-0 z-50 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-b">
+      <header className="sticky top-0 z-50 bg-[#0a0a0a]/95 backdrop-blur-md border-b border-[rgba(212,175,55,0.1)]">
+        {/* Top accent line */}
+        <div className="h-[1px] bg-gradient-to-r from-transparent via-[#d4af37]/50 to-transparent" />
+
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4">
           <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
             {/* Logo & Title */}
             <div className="flex items-center gap-3 shrink-0">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-orange-500 to-rose-500 flex items-center justify-center">
-                <ImageIcon className="w-5 h-5 text-white" />
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#d4af37] to-[#b8941e] flex items-center justify-center gold-glow">
+                <Sparkles className="w-5 h-5 text-[#0a0a0a]" />
               </div>
               <div>
-                <h1 className="text-xl font-bold tracking-tight">ImageFlow</h1>
-                <p className="text-xs text-muted-foreground">Gestor de imágenes</p>
+                <h1 className="text-xl font-bold tracking-tight font-serif shimmer-text">
+                  Jolie Fragrances
+                </h1>
+                <p className="text-[10px] text-[#888] tracking-[0.2em] uppercase">Gestor de Publicaciones</p>
               </div>
             </div>
 
             {/* Search Bar */}
             <div className="flex-1 w-full sm:max-w-md">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <div className="relative group">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[#888] group-focus-within:text-[#d4af37] transition-colors" />
                 <Input
-                  placeholder="Buscar por nombre..."
+                  placeholder="Buscar imagen por nombre..."
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  className="pl-9 pr-4 h-10"
+                  className="pl-9 pr-4 h-10 bg-[#111] border-[rgba(212,175,55,0.15)] text-white placeholder:text-[#555] focus:border-[#d4af37]/40 focus:ring-[#d4af37]/20 transition-all"
                 />
                 {search && (
-                  <button
-                    onClick={() => setSearch('')}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                  >
+                  <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#888] hover:text-[#d4af37] transition-colors">
                     <X className="h-4 w-4" />
                   </button>
                 )}
@@ -419,11 +407,11 @@ export default function Home() {
             <div className="flex items-center gap-2 shrink-0">
               {/* Sort */}
               <Select value={sort} onValueChange={(v) => setSort(v as SortOption)}>
-                <SelectTrigger className="w-[140px] h-10">
-                  <ArrowUpDown className="w-4 h-4 mr-2" />
+                <SelectTrigger className="w-[140px] h-10 bg-[#111] border-[rgba(212,175,55,0.15)] text-white">
+                  <ArrowUpDown className="w-4 h-4 mr-2 text-[#d4af37]" />
                   <SelectValue />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent className="bg-[#111] border-[rgba(212,175,55,0.15)]">
                   <SelectItem value="newest">Más nuevas</SelectItem>
                   <SelectItem value="oldest">Más antiguas</SelectItem>
                   <SelectItem value="name">Nombre</SelectItem>
@@ -433,11 +421,11 @@ export default function Home() {
               </Select>
 
               {/* View mode */}
-              <div className="flex border rounded-lg overflow-hidden">
+              <div className="flex border border-[rgba(212,175,55,0.15)] rounded-lg overflow-hidden">
                 <Button
                   variant={viewMode === 'grid' ? 'default' : 'ghost'}
                   size="sm"
-                  className="rounded-none h-10 px-3"
+                  className={`rounded-none h-10 px-3 ${viewMode === 'grid' ? 'bg-[#d4af37] text-[#0a0a0a] hover:bg-[#e8cc6e]' : 'text-[#888] hover:text-white hover:bg-[#1a1a1a]'}`}
                   onClick={() => setViewMode('grid')}
                 >
                   <Grid3X3 className="h-4 w-4" />
@@ -445,7 +433,7 @@ export default function Home() {
                 <Button
                   variant={viewMode === 'list' ? 'default' : 'ghost'}
                   size="sm"
-                  className="rounded-none h-10 px-3"
+                  className={`rounded-none h-10 px-3 ${viewMode === 'list' ? 'bg-[#d4af37] text-[#0a0a0a] hover:bg-[#e8cc6e]' : 'text-[#888] hover:text-white hover:bg-[#1a1a1a]'}`}
                   onClick={() => setViewMode('list')}
                 >
                   <List className="h-4 w-4" />
@@ -456,23 +444,12 @@ export default function Home() {
               <Button
                 onClick={() => fileInputRef.current?.click()}
                 disabled={uploading}
-                className="h-10 gap-2"
+                className="h-10 gap-2 bg-gradient-to-r from-[#d4af37] to-[#b8941e] text-[#0a0a0a] hover:from-[#e8cc6e] hover:to-[#d4af37] font-semibold gold-glow-hover transition-all"
               >
-                {uploading ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Upload className="h-4 w-4" />
-                )}
+                {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
                 <span className="hidden sm:inline">{uploading ? 'Subiendo...' : 'Subir'}</span>
               </Button>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*"
-                multiple
-                onChange={handleUpload}
-                className="hidden"
-              />
+              <input ref={fileInputRef} type="file" accept="image/*" multiple onChange={handleUpload} className="hidden" />
             </div>
           </div>
         </div>
@@ -480,46 +457,24 @@ export default function Home() {
 
       {/* Bulk Actions Bar */}
       {selectedIds.size > 0 && (
-        <div className="sticky top-[73px] z-40 bg-background/95 backdrop-blur border-b">
+        <div className="sticky top-[73px] z-40 bg-[#0a0a0a]/95 backdrop-blur-md border-b border-[rgba(212,175,55,0.15)]">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <Checkbox
-                checked={selectedIds.size === images.length}
-                onCheckedChange={toggleSelectAll}
-              />
-              <span className="text-sm font-medium">
+              <Checkbox checked={selectedIds.size === images.length} onCheckedChange={toggleSelectAll} className="border-[#d4af37]/40 data-[state=checked]:bg-[#d4af37] data-[state=checked]:border-[#d4af37]" />
+              <span className="text-sm font-medium text-[#d4af37]">
                 {selectedIds.size} seleccionada{selectedIds.size !== 1 ? 's' : ''}
               </span>
             </div>
             <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                className="gap-2"
-                onClick={handleBulkDownload}
-                disabled={bulkDownloading}
-              >
-                {bulkDownloading ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Package className="h-4 w-4" />
-                )}
+              <Button variant="outline" size="sm" className="gap-2 border-[rgba(212,175,55,0.2)] text-[#d4af37] hover:bg-[#d4af37]/10 hover:text-[#e8cc6e]" onClick={handleBulkDownload} disabled={bulkDownloading}>
+                {bulkDownloading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Package className="h-4 w-4" />}
                 Descargar ZIP
               </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                className="gap-2 text-destructive hover:text-destructive"
-                onClick={() => setBulkDeleteDialogOpen(true)}
-              >
+              <Button variant="outline" size="sm" className="gap-2 border-red-900/40 text-red-400 hover:bg-red-900/20 hover:text-red-300" onClick={() => setBulkDeleteDialogOpen(true)}>
                 <Trash2 className="h-4 w-4" />
                 Eliminar
               </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setSelectedIds(new Set())}
-              >
+              <Button variant="ghost" size="sm" className="text-[#888] hover:text-white" onClick={() => setSelectedIds(new Set())}>
                 <X className="h-4 w-4" />
               </Button>
             </div>
@@ -528,25 +483,25 @@ export default function Home() {
       )}
 
       {/* Main Content */}
-      <main className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 py-6">
+      <main className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 py-8 hero-gradient">
         {loading ? (
           <div className="flex flex-col items-center justify-center py-20 gap-4">
-            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-            <p className="text-muted-foreground">Cargando imágenes...</p>
+            <div className="w-12 h-12 rounded-full border-2 border-[rgba(212,175,55,0.2)] border-t-[#d4af37] animate-spin" />
+            <p className="text-[#888] font-serif">Cargando imágenes...</p>
           </div>
         ) : images.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-20 gap-4">
-            <div className="w-20 h-20 rounded-2xl bg-muted flex items-center justify-center">
-              <ImageIcon className="w-10 h-10 text-muted-foreground" />
+          <div className="flex flex-col items-center justify-center py-24 gap-6">
+            <div className="w-24 h-24 rounded-2xl bg-gradient-to-br from-[#111] to-[#1a1a1a] border border-[rgba(212,175,55,0.15)] flex items-center justify-center">
+              <ImageIcon className="w-12 h-12 text-[#d4af37]/40" />
             </div>
             <div className="text-center">
-              <h3 className="text-lg font-semibold">No hay imágenes</h3>
-              <p className="text-muted-foreground text-sm mt-1">
-                {search ? 'No se encontraron resultados para tu búsqueda' : 'Sube tu primera imagen para comenzar'}
+              <h3 className="text-xl font-serif font-semibold text-white">No hay imágenes</h3>
+              <p className="text-[#888] text-sm mt-2 max-w-xs">
+                {search ? 'No se encontraron resultados para tu búsqueda' : 'Sube tu primera imagen para comenzar a gestionar tus publicaciones'}
               </p>
             </div>
             {!search && (
-              <Button onClick={() => fileInputRef.current?.click()} className="gap-2">
+              <Button onClick={() => fileInputRef.current?.click()} className="gap-2 bg-gradient-to-r from-[#d4af37] to-[#b8941e] text-[#0a0a0a] hover:from-[#e8cc6e] hover:to-[#d4af37] font-semibold gold-glow-hover">
                 <Upload className="h-4 w-4" />
                 Subir imagen
               </Button>
@@ -554,76 +509,68 @@ export default function Home() {
           </div>
         ) : viewMode === 'grid' ? (
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-            {images.map((image) => (
+            {images.map((image, index) => (
               <Card
                 key={image.id}
-                className={`group relative overflow-hidden cursor-pointer transition-all duration-200 hover:shadow-lg ${
-                  selectedIds.has(image.id) ? 'ring-2 ring-primary' : ''
+                className={`group relative overflow-hidden cursor-pointer bg-[#111] border transition-all duration-300 image-card card-fade-in ${
+                  selectedIds.has(image.id)
+                    ? 'border-[#d4af37]/50 selected-card-glow'
+                    : 'border-[rgba(212,175,55,0.08)] hover:border-[rgba(212,175,55,0.25)]'
                 }`}
+                style={{ animationDelay: `${index * 50}ms` }}
               >
                 {/* Selection checkbox */}
-                <div
-                  className="absolute top-2 left-2 z-10"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    toggleSelect(image.id);
-                  }}
-                >
+                <div className="absolute top-2 left-2 z-10" onClick={(e) => { e.stopPropagation(); toggleSelect(image.id); }}>
                   {selectedIds.has(image.id) ? (
-                    <div className="w-6 h-6 rounded-md bg-primary flex items-center justify-center shadow-md">
-                      <Check className="w-4 h-4 text-primary-foreground" />
+                    <div className="w-6 h-6 rounded-md bg-gradient-to-br from-[#d4af37] to-[#b8941e] flex items-center justify-center shadow-lg">
+                      <Check className="w-4 h-4 text-[#0a0a0a]" />
                     </div>
                   ) : (
-                    <div className="w-6 h-6 rounded-md bg-background/80 backdrop-blur border flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                      <Square className="w-4 h-4 text-muted-foreground" />
+                    <div className="w-6 h-6 rounded-md bg-[#0a0a0a]/80 backdrop-blur border border-[rgba(212,175,55,0.2)] flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                      <Square className="w-4 h-4 text-[#888]" />
                     </div>
                   )}
                 </div>
 
                 {/* Image thumbnail */}
-                <div
-                  className="relative aspect-square overflow-hidden bg-muted"
-                  onClick={() => openPreview(image)}
-                >
+                <div className="relative aspect-square overflow-hidden bg-gradient-to-br from-[#0a0a0a] to-[#1a1a1a]" onClick={() => openPreview(image)}>
                   <img
                     src={`/api/images/${image.id}/serve`}
                     alt={image.originalName}
-                    className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                    className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
                     loading="lazy"
                   />
                   {/* Hover overlay */}
-                  <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100">
+                  <div className="absolute inset-0 bg-gradient-to-t from-[#0a0a0a]/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-end justify-center pb-4">
                     <Button
                       variant="secondary"
-                      size="icon"
-                      className="h-8 w-8 rounded-full"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        openPreview(image);
-                      }}
+                      size="sm"
+                      className="rounded-full bg-[#d4af37]/20 backdrop-blur-sm border border-[#d4af37]/30 text-[#d4af37] hover:bg-[#d4af37]/30 gap-1.5"
+                      onClick={(e) => { e.stopPropagation(); openPreview(image); }}
                     >
-                      <ZoomIn className="h-4 w-4" />
+                      <ZoomIn className="h-3.5 w-3.5" />
+                      Vista previa
                     </Button>
                   </div>
                 </div>
 
                 {/* Card footer */}
                 <CardContent className="p-3">
-                  <p className="text-sm font-medium truncate" title={image.originalName}>
+                  <p className="text-sm font-medium truncate text-white" title={image.originalName}>
                     {image.originalName.replace(/\.[^/.]+$/, '')}
                   </p>
-                  <div className="flex items-center gap-2 mt-1">
-                    <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-5">
+                  <div className="flex items-center gap-2 mt-1.5">
+                    <Badge className="text-[10px] px-1.5 py-0 h-5 bg-[#d4af37]/10 text-[#d4af37] border-[#d4af37]/20 hover:bg-[#d4af37]/15">
                       {simplifyAspectRatio(image.aspectRatio)}
                     </Badge>
-                    <span className="text-[10px] text-muted-foreground">
+                    <span className="text-[10px] text-[#666]">
                       {image.width}×{image.height}
                     </span>
-                    <span className="text-[10px] text-muted-foreground">
-                      {image.format.toUpperCase()}
+                    <span className="text-[10px] text-[#555] uppercase">
+                      {image.format}
                     </span>
                   </div>
-                  <p className="text-[10px] text-muted-foreground mt-0.5">
+                  <p className="text-[10px] text-[#555] mt-0.5">
                     {formatFileSize(image.size)}
                   </p>
                 </CardContent>
@@ -632,27 +579,21 @@ export default function Home() {
                 <div className="absolute bottom-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                      <Button variant="secondary" size="icon" className="h-7 w-7 rounded-full shadow-md">
+                      <Button variant="secondary" size="icon" className="h-7 w-7 rounded-full bg-[#0a0a0a]/80 backdrop-blur border border-[rgba(212,175,55,0.2)] text-[#d4af37] hover:bg-[#d4af37]/20 hover:text-[#e8cc6e] shadow-lg">
                         <MoreVertical className="h-3.5 w-3.5" />
                       </Button>
                     </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="w-44">
-                      <DropdownMenuItem onClick={() => handleDownload(image)}>
+                    <DropdownMenuContent align="end" className="w-44 bg-[#111] border-[rgba(212,175,55,0.15)]">
+                      <DropdownMenuItem onClick={() => handleDownload(image)} className="text-[#ccc] focus:text-[#d4af37] focus:bg-[#d4af37]/10">
                         <Download className="h-4 w-4 mr-2" />
                         Descargar
                       </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => openEditDialog(image)}>
+                      <DropdownMenuItem onClick={() => openEditDialog(image)} className="text-[#ccc] focus:text-[#d4af37] focus:bg-[#d4af37]/10">
                         <Edit3 className="h-4 w-4 mr-2" />
                         Editar
                       </DropdownMenuItem>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem
-                        className="text-destructive focus:text-destructive"
-                        onClick={() => {
-                          setDeleteTarget(image);
-                          setDeleteDialogOpen(true);
-                        }}
-                      >
+                      <DropdownMenuSeparator className="bg-[rgba(212,175,55,0.1)]" />
+                      <DropdownMenuItem className="text-red-400 focus:text-red-300 focus:bg-red-900/20" onClick={() => { setDeleteTarget(image); setDeleteDialogOpen(true); }}>
                         <Trash2 className="h-4 w-4 mr-2" />
                         Eliminar
                       </DropdownMenuItem>
@@ -665,59 +606,40 @@ export default function Home() {
         ) : (
           /* List view */
           <div className="space-y-2">
-            {images.map((image) => (
+            {images.map((image, index) => (
               <Card
                 key={image.id}
-                className={`flex items-center gap-4 p-3 cursor-pointer transition-all hover:shadow-md ${
-                  selectedIds.has(image.id) ? 'ring-2 ring-primary' : ''
+                className={`flex items-center gap-4 p-3 cursor-pointer bg-[#111] border transition-all duration-300 image-card card-fade-in ${
+                  selectedIds.has(image.id)
+                    ? 'border-[#d4af37]/50 selected-card-glow'
+                    : 'border-[rgba(212,175,55,0.08)] hover:border-[rgba(212,175,55,0.25)]'
                 }`}
+                style={{ animationDelay: `${index * 30}ms` }}
                 onClick={() => toggleSelect(image.id)}
               >
-                <Checkbox
-                  checked={selectedIds.has(image.id)}
-                  onCheckedChange={() => toggleSelect(image.id)}
-                />
-                <div
-                  className="w-14 h-14 rounded-lg overflow-hidden bg-muted shrink-0"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    openPreview(image);
-                  }}
-                >
-                  <img
-                    src={`/api/images/${image.id}/serve`}
-                    alt={image.originalName}
-                    className="w-full h-full object-cover"
-                    loading="lazy"
-                  />
+                <Checkbox checked={selectedIds.has(image.id)} onCheckedChange={() => toggleSelect(image.id)} className="border-[#d4af37]/40 data-[state=checked]:bg-[#d4af37] data-[state=checked]:border-[#d4af37]" />
+                <div className="w-14 h-14 rounded-lg overflow-hidden bg-gradient-to-br from-[#0a0a0a] to-[#1a1a1a] shrink-0 border border-[rgba(212,175,55,0.08)]" onClick={(e) => { e.stopPropagation(); openPreview(image); }}>
+                  <img src={`/api/images/${image.id}/serve`} alt={image.originalName} className="w-full h-full object-cover" loading="lazy" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="font-medium text-sm truncate">{image.originalName}</p>
-                  <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
+                  <p className="font-medium text-sm truncate text-white">{image.originalName}</p>
+                  <div className="flex items-center gap-3 mt-1 text-xs text-[#888]">
                     <span>{image.width}×{image.height}</span>
-                    <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4">
+                    <Badge className="text-[10px] px-1.5 py-0 h-4 bg-[#d4af37]/10 text-[#d4af37] border-[#d4af37]/20">
                       {simplifyAspectRatio(image.aspectRatio)}
                     </Badge>
-                    <span>{image.format.toUpperCase()}</span>
+                    <span className="uppercase">{image.format}</span>
                     <span>{formatFileSize(image.size)}</span>
                   </div>
                 </div>
                 <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
-                  <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleDownload(image)}>
+                  <Button variant="ghost" size="icon" className="h-8 w-8 text-[#888] hover:text-[#d4af37] hover:bg-[#d4af37]/10" onClick={() => handleDownload(image)}>
                     <Download className="h-4 w-4" />
                   </Button>
-                  <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEditDialog(image)}>
+                  <Button variant="ghost" size="icon" className="h-8 w-8 text-[#888] hover:text-[#d4af37] hover:bg-[#d4af37]/10" onClick={() => openEditDialog(image)}>
                     <Edit3 className="h-4 w-4" />
                   </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8 text-destructive hover:text-destructive"
-                    onClick={() => {
-                      setDeleteTarget(image);
-                      setDeleteDialogOpen(true);
-                    }}
-                  >
+                  <Button variant="ghost" size="icon" className="h-8 w-8 text-red-400/60 hover:text-red-400 hover:bg-red-900/20" onClick={() => { setDeleteTarget(image); setDeleteDialogOpen(true); }}>
                     <Trash2 className="h-4 w-4" />
                   </Button>
                 </div>
@@ -728,41 +650,38 @@ export default function Home() {
       </main>
 
       {/* Footer */}
-      <footer className="border-t bg-background mt-auto">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between text-sm text-muted-foreground">
-          <span>{images.length} imagen{images.length !== 1 ? 'es' : ''}</span>
-          <span>ImageFlow · Gestor de imágenes</span>
+      <footer className="border-t border-[rgba(212,175,55,0.1)] bg-[#0a0a0a] mt-auto footer-reveal">
+        <div className="h-[1px] bg-gradient-to-r from-transparent via-[#d4af37]/30 to-transparent" />
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between text-sm text-[#555]">
+          <span className="font-serif">{images.length} imagen{images.length !== 1 ? 'es' : ''}</span>
+          <div className="flex items-center gap-2">
+            <Sparkles className="w-3 h-3 text-[#d4af37]/40" />
+            <span className="font-serif text-[#888]">Jolie Fragrances</span>
+          </div>
         </div>
       </footer>
 
       {/* Preview Dialog */}
       <Dialog open={previewDialogOpen} onOpenChange={setPreviewDialogOpen}>
-        <DialogContent className="max-w-4xl max-h-[90vh] p-0 overflow-hidden">
+        <DialogContent className="max-w-4xl max-h-[90vh] p-0 overflow-hidden bg-[#0a0a0a] border-[rgba(212,175,55,0.15)]">
           {previewImage && (
             <>
-              <div className="relative bg-muted/50 flex items-center justify-center max-h-[70vh] overflow-auto">
-                <img
-                  src={`/api/images/${previewImage.id}/serve`}
-                  alt={previewImage.originalName}
-                  className="max-w-full max-h-[70vh] object-contain"
-                />
+              <div className="relative bg-[#0a0a0a] flex items-center justify-center max-h-[70vh] overflow-auto">
+                <img src={`/api/images/${previewImage.id}/serve`} alt={previewImage.originalName} className="max-w-full max-h-[70vh] object-contain" />
               </div>
-              <div className="p-4 space-y-3">
+              <div className="p-5 space-y-4 bg-[#0a0a0a]">
                 <DialogHeader>
-                  <DialogTitle className="text-base">{previewImage.originalName}</DialogTitle>
-                  <DialogDescription className="text-sm">
+                  <DialogTitle className="text-base font-serif text-white">{previewImage.originalName}</DialogTitle>
+                  <DialogDescription className="text-sm text-[#888]">
                     {previewImage.width}×{previewImage.height} · {simplifyAspectRatio(previewImage.aspectRatio)} · {previewImage.format.toUpperCase()} · {formatFileSize(previewImage.size)}
                   </DialogDescription>
                 </DialogHeader>
                 <div className="flex gap-2">
-                  <Button size="sm" className="gap-2" onClick={() => handleDownload(previewImage)}>
+                  <Button size="sm" className="gap-2 bg-gradient-to-r from-[#d4af37] to-[#b8941e] text-[#0a0a0a] hover:from-[#e8cc6e] hover:to-[#d4af37] font-semibold" onClick={() => handleDownload(previewImage)}>
                     <Download className="h-4 w-4" />
                     Descargar
                   </Button>
-                  <Button variant="outline" size="sm" className="gap-2" onClick={() => {
-                    setPreviewDialogOpen(false);
-                    openEditDialog(previewImage);
-                  }}>
+                  <Button variant="outline" size="sm" className="gap-2 border-[rgba(212,175,55,0.2)] text-[#d4af37] hover:bg-[#d4af37]/10" onClick={() => { setPreviewDialogOpen(false); openEditDialog(previewImage); }}>
                     <Edit3 className="h-4 w-4" />
                     Editar
                   </Button>
@@ -775,13 +694,13 @@ export default function Home() {
 
       {/* Edit Dialog */}
       <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-lg bg-[#0a0a0a] border-[rgba(212,175,55,0.15)]">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Settings2 className="h-5 w-5" />
+            <DialogTitle className="flex items-center gap-2 font-serif text-white">
+              <Settings2 className="h-5 w-5 text-[#d4af37]" />
               Editar imagen
             </DialogTitle>
-            <DialogDescription>
+            <DialogDescription className="text-[#888]">
               Cambia el aspect ratio y formato de tu imagen. Se creará una nueva versión.
             </DialogDescription>
           </DialogHeader>
@@ -790,30 +709,26 @@ export default function Home() {
             <div className="space-y-6">
               {/* Preview */}
               <div className="flex gap-4">
-                <div className="w-24 h-24 rounded-lg overflow-hidden bg-muted shrink-0">
-                  <img
-                    src={`/api/images/${editingImage.id}/serve`}
-                    alt={editingImage.originalName}
-                    className="w-full h-full object-cover"
-                  />
+                <div className="w-24 h-24 rounded-lg overflow-hidden bg-gradient-to-br from-[#111] to-[#1a1a1a] shrink-0 border border-[rgba(212,175,55,0.1)]">
+                  <img src={`/api/images/${editingImage.id}/serve`} alt={editingImage.originalName} className="w-full h-full object-cover" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="font-medium text-sm truncate">{editingImage.originalName}</p>
-                  <p className="text-xs text-muted-foreground mt-1">
+                  <p className="font-medium text-sm truncate text-white">{editingImage.originalName}</p>
+                  <p className="text-xs text-[#888] mt-1">
                     Original: {editingImage.width}×{editingImage.height} ({simplifyAspectRatio(editingImage.aspectRatio)})
                   </p>
-                  <p className="text-xs text-muted-foreground">
+                  <p className="text-xs text-[#666]">
                     {editingImage.format.toUpperCase()} · {formatFileSize(editingImage.size)}
                   </p>
                 </div>
               </div>
 
-              <Separator />
+              <Separator className="bg-[rgba(212,175,55,0.1)]" />
 
               {/* Aspect Ratio */}
               <div className="space-y-3">
-                <Label className="flex items-center gap-2 text-sm font-semibold">
-                  <Crop className="h-4 w-4" />
+                <Label className="flex items-center gap-2 text-sm font-semibold text-white">
+                  <Crop className="h-4 w-4 text-[#d4af37]" />
                   Aspect Ratio
                 </Label>
                 <div className="grid grid-cols-4 gap-2">
@@ -821,36 +736,37 @@ export default function Home() {
                     <button
                       key={ar.value}
                       onClick={() => setEditAspectRatio(ar.value)}
-                      className={`flex flex-col items-center gap-1 p-2.5 rounded-lg border-2 transition-all text-center ${
+                      className={`flex flex-col items-center gap-1.5 p-2.5 rounded-lg border-2 transition-all text-center ${
                         editAspectRatio === ar.value
-                          ? 'border-primary bg-primary/5'
-                          : 'border-transparent bg-muted/50 hover:bg-muted'
+                          ? 'border-[#d4af37] bg-[#d4af37]/8'
+                          : 'border-[rgba(212,175,55,0.08)] bg-[#111] hover:bg-[#1a1a1a] hover:border-[rgba(212,175,55,0.15)]'
                       }`}
                     >
-                      {/* Visual ratio indicator */}
                       <div
-                        className="bg-current rounded-sm"
+                        className="rounded-sm bg-current"
                         style={{
-                          width: ar.value === '1:1' ? '20px' : ar.value === '9:16' ? '12px' : ar.value === '16:9' ? '24px' : ar.value === '4:5' ? '16px' : ar.value === '3:4' ? '15px' : ar.value === '4:3' ? '20px' : ar.value === '2:3' ? '14px' : '18px',
-                          height: ar.value === '1:1' ? '20px' : ar.value === '9:16' ? '21px' : ar.value === '16:9' ? '14px' : ar.value === '4:5' ? '20px' : ar.value === '3:4' ? '20px' : ar.value === '4:3' ? '15px' : ar.value === '2:3' ? '21px' : '18px',
-                          opacity: editAspectRatio === ar.value ? 1 : 0.4,
+                          width: `${ar.w}px`,
+                          height: `${ar.h}px`,
+                          color: editAspectRatio === ar.value ? '#d4af37' : '#555',
                         }}
                       />
-                      <span className="text-xs font-medium">{ar.label}</span>
+                      <span className={`text-[11px] font-medium ${editAspectRatio === ar.value ? 'text-[#d4af37]' : 'text-[#888]'}`}>
+                        {ar.label}
+                      </span>
                     </button>
                   ))}
                 </div>
-                <p className="text-[11px] text-muted-foreground">
+                <p className="text-[11px] text-[#888]">
                   {ASPECT_RATIOS.find((ar) => ar.value === editAspectRatio)?.desc}
                 </p>
               </div>
 
-              <Separator />
+              <Separator className="bg-[rgba(212,175,55,0.1)]" />
 
               {/* Format */}
               <div className="space-y-3">
-                <Label className="flex items-center gap-2 text-sm font-semibold">
-                  <FileType className="h-4 w-4" />
+                <Label className="flex items-center gap-2 text-sm font-semibold text-white">
+                  <FileType className="h-4 w-4 text-[#d4af37]" />
                   Formato de salida
                 </Label>
                 <div className="grid grid-cols-3 gap-2">
@@ -860,48 +776,47 @@ export default function Home() {
                       onClick={() => setEditFormat(f.value)}
                       className={`flex flex-col items-center gap-1 p-3 rounded-lg border-2 transition-all ${
                         editFormat === f.value
-                          ? 'border-primary bg-primary/5'
-                          : 'border-transparent bg-muted/50 hover:bg-muted'
+                          ? 'border-[#d4af37] bg-[#d4af37]/8'
+                          : 'border-[rgba(212,175,55,0.08)] bg-[#111] hover:bg-[#1a1a1a] hover:border-[rgba(212,175,55,0.15)]'
                       }`}
                     >
-                      <span className="text-sm font-bold">{f.label}</span>
-                      <span className="text-[10px] text-muted-foreground text-center">{f.desc}</span>
+                      <span className={`text-sm font-bold ${editFormat === f.value ? 'text-[#d4af37]' : 'text-[#ccc]'}`}>{f.label}</span>
+                      <span className="text-[10px] text-[#888] text-center">{f.desc}</span>
                     </button>
                   ))}
                 </div>
               </div>
 
-              {/* Quality (for jpeg/webp) */}
+              {/* Quality */}
               {(editFormat === 'jpeg' || editFormat === 'webp') && (
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
-                    <Label className="text-sm font-semibold">Calidad</Label>
-                    <span className="text-sm text-muted-foreground">{editQuality}%</span>
+                    <Label className="text-sm font-semibold text-white">Calidad</Label>
+                    <span className="text-sm text-[#d4af37] font-medium">{editQuality}%</span>
                   </div>
                   <Slider
                     value={[editQuality]}
                     onValueChange={([v]) => setEditQuality(v)}
-                    min={10}
-                    max={100}
-                    step={5}
+                    min={10} max={100} step={5}
+                    className="[&_[role=slider]]:bg-[#d4af37] [&_[role=slider]]:border-[#d4af37]"
                   />
-                  <div className="flex justify-between text-[10px] text-muted-foreground">
+                  <div className="flex justify-between text-[10px] text-[#666]">
                     <span>Menor tamaño</span>
                     <span>Mayor calidad</span>
                   </div>
                 </div>
               )}
 
-              <Separator />
+              <Separator className="bg-[rgba(212,175,55,0.1)]" />
 
-              {/* Result preview info */}
-              <div className="bg-muted/50 rounded-lg p-3 text-sm space-y-1">
-                <p className="font-medium">Vista previa del resultado:</p>
-                <p className="text-muted-foreground">
-                  Ratio: <span className="text-foreground font-medium">{editAspectRatio}</span> ·
-                  Formato: <span className="text-foreground font-medium">{editFormat.toUpperCase()}</span>
+              {/* Result preview */}
+              <div className="bg-[#111] rounded-lg p-3 text-sm space-y-1 border border-[rgba(212,175,55,0.08)]">
+                <p className="font-medium text-white font-serif">Vista previa del resultado:</p>
+                <p className="text-[#888]">
+                  Ratio: <span className="text-[#d4af37] font-medium">{editAspectRatio}</span> ·
+                  Formato: <span className="text-[#d4af37] font-medium">{editFormat.toUpperCase()}</span>
                   {(editFormat === 'jpeg' || editFormat === 'webp') && (
-                    <> · Calidad: <span className="text-foreground font-medium">{editQuality}%</span></>
+                    <> · Calidad: <span className="text-[#d4af37] font-medium">{editQuality}%</span></>
                   )}
                 </p>
               </div>
@@ -910,9 +825,9 @@ export default function Home() {
 
           <DialogFooter className="gap-2">
             <DialogClose asChild>
-              <Button variant="outline">Cancelar</Button>
+              <Button variant="outline" className="border-[rgba(212,175,55,0.2)] text-[#888] hover:text-white hover:bg-[#1a1a1a]">Cancelar</Button>
             </DialogClose>
-            <Button onClick={handleEdit} disabled={editing} className="gap-2">
+            <Button onClick={handleEdit} disabled={editing} className="gap-2 bg-gradient-to-r from-[#d4af37] to-[#b8941e] text-[#0a0a0a] hover:from-[#e8cc6e] hover:to-[#d4af37] font-semibold gold-glow-hover">
               {editing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Edit3 className="h-4 w-4" />}
               Crear versión editada
             </Button>
@@ -920,26 +835,20 @@ export default function Home() {
         </DialogContent>
       </Dialog>
 
-      {/* Delete Confirmation Dialog */}
+      {/* Delete Confirmation */}
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-        <AlertDialogContent>
+        <AlertDialogContent className="bg-[#111] border-[rgba(212,175,55,0.15)]">
           <AlertDialogHeader>
-            <AlertDialogTitle>¿Eliminar imagen?</AlertDialogTitle>
-            <AlertDialogDescription>
+            <AlertDialogTitle className="text-white font-serif">¿Eliminar imagen?</AlertDialogTitle>
+            <AlertDialogDescription className="text-[#888]">
               {deleteTarget && (
-                <>
-                  Se eliminará <strong>{deleteTarget.originalName}</strong> permanentemente.
-                  Esta acción no se puede deshacer.
-                </>
+                <>Se eliminará <strong className="text-white">{deleteTarget.originalName}</strong> permanentemente. Esta acción no se puede deshacer.</>
               )}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => deleteTarget && handleDelete(deleteTarget)}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
+            <AlertDialogCancel className="bg-[#1a1a1a] border-[rgba(212,175,55,0.15)] text-[#888] hover:text-white hover:bg-[#222]">Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={() => deleteTarget && handleDelete(deleteTarget)} className="bg-red-900/80 text-red-100 hover:bg-red-800 border-0">
               {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Eliminar'}
             </AlertDialogAction>
           </AlertDialogFooter>
@@ -948,20 +857,16 @@ export default function Home() {
 
       {/* Bulk Delete Confirmation */}
       <AlertDialog open={bulkDeleteDialogOpen} onOpenChange={setBulkDeleteDialogOpen}>
-        <AlertDialogContent>
+        <AlertDialogContent className="bg-[#111] border-[rgba(212,175,55,0.15)]">
           <AlertDialogHeader>
-            <AlertDialogTitle>¿Eliminar {selectedIds.size} imágenes?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Se eliminarán permanentemente {selectedIds.size} imagen{selectedIds.size !== 1 ? 'es' : ''}.
-              Esta acción no se puede deshacer.
+            <AlertDialogTitle className="text-white font-serif">¿Eliminar {selectedIds.size} imágenes?</AlertDialogTitle>
+            <AlertDialogDescription className="text-[#888]">
+              Se eliminarán permanentemente {selectedIds.size} imagen{selectedIds.size !== 1 ? 'es' : ''}. Esta acción no se puede deshacer.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleBulkDelete}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
+            <AlertDialogCancel className="bg-[#1a1a1a] border-[rgba(212,175,55,0.15)] text-[#888] hover:text-white hover:bg-[#222]">Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={handleBulkDelete} className="bg-red-900/80 text-red-100 hover:bg-red-800 border-0">
               Eliminar todo
             </AlertDialogAction>
           </AlertDialogFooter>
