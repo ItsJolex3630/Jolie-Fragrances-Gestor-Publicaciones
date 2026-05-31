@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Search,
   Download,
@@ -143,7 +143,7 @@ function simplifyAspectRatio(ratio: string): string {
 }
 
 export default function Home() {
-  const [images, setImages] = useState<ImageData[]>([]);
+  const [allImages, setAllImages] = useState<ImageData[]>([]);
   const [loading, setLoading] = useState(true);
   const [initializing, setInitializing] = useState(false);
   const [search, setSearch] = useState('');
@@ -233,55 +233,87 @@ export default function Home() {
     return [];
   }, []);
 
-  // Fetch images
+  // Client-side search and sort
+  const images = useMemo(() => {
+    let result = [...allImages];
+
+    // Search filter (case-insensitive)
+    if (search.trim()) {
+      const q = search.toLowerCase().trim();
+      result = result.filter((img) =>
+        img.name.toLowerCase().includes(q) ||
+        img.originalName.toLowerCase().includes(q) ||
+        img.format.toLowerCase().includes(q) ||
+        img.aspectRatio.toLowerCase().includes(q)
+      );
+    }
+
+    // Sort
+    result.sort((a, b) => {
+      switch (sort) {
+        case 'oldest':
+          return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+        case 'name':
+          return a.originalName.localeCompare(b.originalName);
+        case 'size_asc':
+          return a.size - b.size;
+        case 'size_desc':
+          return b.size - a.size;
+        case 'newest':
+        default:
+          return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      }
+    });
+
+    return result;
+  }, [allImages, search, sort]);
+
+  // Fetch all images (no search/sort params - we filter client-side)
   const fetchImages = useCallback(async () => {
     try {
       setLoading(true);
-      const params = new URLSearchParams();
-      if (search) params.set('search', search);
-      params.set('sort', sort);
-      const res = await fetch(`/api/images?${params.toString()}`);
+      const res = await fetch('/api/images');
       if (res.ok) {
         const data = await res.json();
         if (data.length > 0) {
-          setImages(data);
+          setAllImages(data);
         } else {
           // Try initializing the DB
           await initializeDB();
-          const res2 = await fetch(`/api/images?${params.toString()}`);
+          const res2 = await fetch('/api/images');
           if (res2.ok) {
             const data2 = await res2.json();
             if (data2.length > 0) {
-              setImages(data2);
+              setAllImages(data2);
             } else {
               // Fallback to metadata.json
               const fallbackData = await loadFromMetadata();
-              setImages(fallbackData);
+              setAllImages(fallbackData);
             }
           }
         }
       } else {
         // API failed, use metadata.json fallback
         const fallbackData = await loadFromMetadata();
-        setImages(fallbackData);
+        setAllImages(fallbackData);
       }
     } catch (err) {
       console.error('Error fetching images:', err);
       // Try metadata.json fallback
       const fallbackData = await loadFromMetadata();
       if (fallbackData.length > 0) {
-        setImages(fallbackData);
+        setAllImages(fallbackData);
       } else {
         toast({ title: 'Error', description: 'No se pudieron cargar las imágenes', variant: 'destructive' });
       }
     } finally {
       setLoading(false);
     }
-  }, [search, sort, toast, initializeDB, loadFromMetadata]);
+  }, [toast, initializeDB, loadFromMetadata]);
 
   useEffect(() => {
     fetchImages();
-  }, [fetchImages]);
+  }, []);
 
   // Download single
   const handleDownload = async (image: ImageData) => {
@@ -344,7 +376,7 @@ export default function Home() {
     try {
       const res = await fetch(`/api/images/${image.id}`, { method: 'DELETE' });
       if (res.ok) {
-        setImages((prev) => prev.filter((img) => img.id !== image.id));
+        setAllImages((prev) => prev.filter((img) => img.id !== image.id));
         setSelectedIds((prev) => { const next = new Set(prev); next.delete(image.id); return next; });
         toast({ title: 'Eliminada', description: `${image.originalName} fue eliminada` });
       }
@@ -363,7 +395,7 @@ export default function Home() {
     for (const id of ids) {
       try { await fetch(`/api/images/${id}`, { method: 'DELETE' }); } catch { /* continue */ }
     }
-    setImages((prev) => prev.filter((img) => !selectedIds.has(img.id)));
+    setAllImages((prev) => prev.filter((img) => !selectedIds.has(img.id)));
     setSelectedIds(new Set());
     setBulkDeleteDialogOpen(false);
     toast({ title: 'Eliminadas', description: `${ids.length} imagen(es) eliminada(s)` });
@@ -381,7 +413,7 @@ export default function Home() {
       });
       if (res.ok) {
         const newImage = await res.json();
-        setImages((prev) => [newImage, ...prev]);
+        setAllImages((prev) => [newImage, ...prev]);
         toast({ title: 'Imagen editada', description: `Nueva versión creada con ratio ${editAspectRatio} en formato ${editFormat.toUpperCase()}` });
         setEditDialogOpen(false);
         setEditingImage(null);
