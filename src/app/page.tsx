@@ -76,7 +76,7 @@ interface ImageData {
   id: string;
   name: string;
   originalName: string;
-  path: string;
+  mimeType: string;
   width: number;
   height: number;
   size: number;

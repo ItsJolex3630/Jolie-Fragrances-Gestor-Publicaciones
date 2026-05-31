@@ -2,12 +2,18 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import sharp from 'sharp';
 import { v4 as uuidv4 } from 'uuid';
-import { stat, mkdir } from 'fs/promises';
 import path from 'path';
 
-const UPLOAD_DIR = process.env.VERCEL === '1'
-  ? path.join('/tmp', 'jolie-uploads')
-  : (process.env.UPLOAD_DIR || path.join(process.cwd(), 'upload'));
+const MIME_TYPES: Record<string, string> = {
+  png: 'image/png',
+  jpeg: 'image/jpeg',
+  jpg: 'image/jpeg',
+  webp: 'image/webp',
+  gif: 'image/gif',
+  svg: 'image/svg+xml',
+  tiff: 'image/tiff',
+  avif: 'image/avif',
+};
 
 export async function POST(
   request: NextRequest,
@@ -34,12 +40,12 @@ export async function POST(
       );
     }
 
-    const filePath = path.join(UPLOAD_DIR, originalImage.path);
+    const originalBuffer = Buffer.from(originalImage.data);
     const originalWidth = originalImage.width;
     const originalHeight = originalImage.height;
 
     const outputFormat = format || originalImage.format;
-    let pipeline = sharp(filePath);
+    let pipeline = sharp(originalBuffer);
 
     let newWidth = originalWidth;
     let newHeight = originalHeight;
@@ -89,27 +95,38 @@ export async function POST(
 
     const ext = `.${outputFormat}`;
     const uniqueName = `${uuidv4()}${ratioSuffix}${ext}`;
-
-    await mkdir(UPLOAD_DIR, { recursive: true });
-    const newFilePath = path.join(UPLOAD_DIR, uniqueName);
-    await pipeline.toFile(newFilePath);
-
-    const fileStat = await stat(newFilePath);
+    const newBuffer = await pipeline.toBuffer();
+    const mimeType = MIME_TYPES[outputFormat.toLowerCase()] || 'image/png';
 
     const gcd = (a: number, b: number): number => (b === 0 ? a : gcd(b, a % b));
     const divisor = gcd(newWidth, newHeight);
     const newAspectRatio = `${newWidth / divisor}:${newHeight / divisor}`;
 
+    // Store edited image directly in the database
     const newImage = await db.image.create({
       data: {
         name: uniqueName,
         originalName: `${path.parse(originalImage.originalName).name}${ratioSuffix}${ext}`,
-        path: uniqueName,
+        data: newBuffer,
+        mimeType,
         width: newWidth,
         height: newHeight,
-        size: fileStat.size,
+        size: newBuffer.length,
         format: outputFormat,
         aspectRatio: newAspectRatio,
+      },
+      select: {
+        id: true,
+        name: true,
+        originalName: true,
+        mimeType: true,
+        width: true,
+        height: true,
+        size: true,
+        format: true,
+        aspectRatio: true,
+        createdAt: true,
+        updatedAt: true,
       },
     });
 

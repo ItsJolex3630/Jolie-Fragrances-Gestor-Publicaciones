@@ -1,12 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import JSZip from 'jszip';
-import { readFile } from 'fs/promises';
 import path from 'path';
-
-const UPLOAD_DIR = process.env.VERCEL === '1'
-  ? path.join('/tmp', 'jolie-uploads')
-  : (process.env.UPLOAD_DIR || path.join(process.cwd(), 'upload'));
 
 export async function POST(request: NextRequest) {
   try {
@@ -38,8 +33,7 @@ export async function POST(request: NextRequest) {
 
     for (const image of images) {
       try {
-        const filePath = path.join(UPLOAD_DIR, image.path);
-        const fileBuffer = await readFile(filePath);
+        const fileBuffer = Buffer.from(image.data);
 
         let fileName = image.originalName;
         if (usedNames.has(fileName)) {
@@ -55,7 +49,7 @@ export async function POST(request: NextRequest) {
 
         zip.file(fileName, fileBuffer);
       } catch (fileError) {
-        console.error(`Error reading file ${image.path}:`, fileError);
+        console.error(`Error processing file ${image.path}:`, fileError);
       }
     }
 

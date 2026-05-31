@@ -32,7 +32,8 @@ model Image {
   id             String   @id @default(cuid())
   name           String
   originalName   String
-  path           String   // Relative path within upload dir (e.g., "abc123.png")
+  data           Bytes    // Image binary data stored directly in DB
+  mimeType       String   // e.g. "image/png", "image/jpeg"
   width          Int
   height         Int
   size           Int

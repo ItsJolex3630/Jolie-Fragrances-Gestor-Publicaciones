@@ -2,13 +2,18 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { imageSize } from 'image-size';
 import { v4 as uuidv4 } from 'uuid';
-import { writeFile, mkdir } from 'fs/promises';
 import path from 'path';
 
-// Upload directory: use /tmp on Vercel (read-only FS workaround), local upload dir otherwise
-const UPLOAD_DIR = process.env.VERCEL === '1'
-  ? path.join('/tmp', 'jolie-uploads')
-  : (process.env.UPLOAD_DIR || path.join(process.cwd(), 'upload'));
+const MIME_TYPES: Record<string, string> = {
+  png: 'image/png',
+  jpeg: 'image/jpeg',
+  jpg: 'image/jpeg',
+  webp: 'image/webp',
+  gif: 'image/gif',
+  svg: 'image/svg+xml',
+  tiff: 'image/tiff',
+  avif: 'image/avif',
+};
 
 export async function GET(request: NextRequest) {
   try {
@@ -39,6 +44,20 @@ export async function GET(request: NextRequest) {
     const images = await db.image.findMany({
       where,
       orderBy,
+      // Exclude binary data from list queries for performance
+      select: {
+        id: true,
+        name: true,
+        originalName: true,
+        mimeType: true,
+        width: true,
+        height: true,
+        size: true,
+        format: true,
+        aspectRatio: true,
+        createdAt: true,
+        updatedAt: true,
+      },
     });
 
     return NextResponse.json(images);
@@ -73,6 +92,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Accept empty MIME type (clipboard images) but validate if present
     if (file.type && !file.type.startsWith('image/')) {
       return NextResponse.json(
         { error: `El archivo "${file.name}" no es una imagen válida.` },
@@ -108,14 +128,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Generate unique filename
-    const ext = path.extname(file.name) || '.png';
-    const uniqueName = `${uuidv4()}${ext}`;
+    // Determine MIME type
+    const ext = path.extname(file.name).replace('.', '') || format;
+    const mimeType = file.type || MIME_TYPES[ext.toLowerCase()] || MIME_TYPES[format.toLowerCase()] || 'image/png';
 
-    // Ensure upload directory exists and write file
-    await mkdir(UPLOAD_DIR, { recursive: true });
-    const filePath = path.join(UPLOAD_DIR, uniqueName);
-    await writeFile(filePath, buffer);
+    // Generate unique filename
+    const fileExt = path.extname(file.name) || `.${format || 'png'}`;
+    const uniqueName = `${uuidv4()}${fileExt}`;
 
     const size = buffer.length;
 
@@ -124,16 +143,31 @@ export async function POST(request: NextRequest) {
     const divisor = gcd(width, height);
     const aspectRatio = `${width / divisor}:${height / divisor}`;
 
+    // Store image data directly in the database (no filesystem)
     const image = await db.image.create({
       data: {
         name: uniqueName,
-        originalName: file.name,
-        path: uniqueName,
+        originalName: file.name || `clipboard-image.${fileExt.replace('.', '')}`,
+        data: buffer,
+        mimeType,
         width,
         height,
         size,
         format,
         aspectRatio,
+      },
+      select: {
+        id: true,
+        name: true,
+        originalName: true,
+        mimeType: true,
+        width: true,
+        height: true,
+        size: true,
+        format: true,
+        aspectRatio: true,
+        createdAt: true,
+        updatedAt: true,
       },
     });
 
