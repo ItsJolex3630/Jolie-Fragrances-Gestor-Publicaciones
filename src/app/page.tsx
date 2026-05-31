@@ -203,21 +203,31 @@ export default function Home() {
     fetchImages();
   }, [fetchImages]);
 
-  // Upload
-  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
+  // Upload files (from input or drag & drop)
+  const uploadFiles = async (files: FileList | File[]) => {
     if (!files || files.length === 0) return;
     setUploading(true);
     let successCount = 0;
     let errorCount = 0;
     for (const file of Array.from(files)) {
+      // Validate file type
+      if (!file.type.startsWith('image/')) {
+        errorCount++;
+        continue;
+      }
       try {
         const formData = new FormData();
         formData.append('file', file);
         const res = await fetch('/api/images', { method: 'POST', body: formData });
-        if (res.ok) successCount++;
-        else errorCount++;
-      } catch {
+        if (res.ok) {
+          successCount++;
+        } else {
+          const errData = await res.json().catch(() => ({}));
+          console.error('Upload error:', errData);
+          errorCount++;
+        }
+      } catch (err) {
+        console.error('Upload network error:', err);
         errorCount++;
       }
     }
@@ -225,7 +235,50 @@ export default function Home() {
     if (fileInputRef.current) fileInputRef.current.value = '';
     await fetchImages();
     if (successCount > 0) toast({ title: 'Carga exitosa', description: `${successCount} imagen(es) subida(s)` });
-    if (errorCount > 0) toast({ title: 'Error', description: `${errorCount} imagen(es) fallaron al subir`, variant: 'destructive' });
+    if (errorCount > 0) toast({ title: 'Error', description: `${errorCount} imagen(es) fallaron al subir. Asegúrate de que sean archivos de imagen válidos.`, variant: 'destructive' });
+  };
+
+  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (files) await uploadFiles(files);
+  };
+
+  // Drag & Drop handlers
+  const [isDragging, setIsDragging] = useState(false);
+  const dragCounter = useRef(0);
+
+  const handleDragEnter = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounter.current++;
+    if (e.dataTransfer.items && e.dataTransfer.items.length > 0) {
+      setIsDragging(true);
+    }
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounter.current--;
+    if (dragCounter.current === 0) {
+      setIsDragging(false);
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+  };
+
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+    dragCounter.current = 0;
+    const files = e.dataTransfer.files;
+    if (files && files.length > 0) {
+      await uploadFiles(files);
+    }
   };
 
   // Download single
@@ -355,7 +408,12 @@ export default function Home() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-[#0a0a0a] text-white">
+    <div className="min-h-screen flex flex-col bg-[#0a0a0a] text-white"
+      onDragEnter={handleDragEnter}
+      onDragLeave={handleDragLeave}
+      onDragOver={handleDragOver}
+      onDrop={handleDrop}
+    >
       {/* Cursor Glow */}
       <div
         className="cursor-glow"
@@ -364,6 +422,21 @@ export default function Home() {
           opacity: cursorVisible ? 1 : 0,
         }}
       />
+
+      {/* Drag & Drop Overlay */}
+      {isDragging && (
+        <div className="fixed inset-0 z-[100] bg-[#0a0a0a]/90 backdrop-blur-md flex items-center justify-center">
+          <div className="flex flex-col items-center gap-6 p-12 rounded-2xl border-2 border-dashed border-[#d4af37]/60 bg-[#0a0a0a]/80 gold-glow">
+            <div className="w-20 h-20 rounded-2xl bg-[#d4af37]/10 flex items-center justify-center">
+              <Upload className="w-10 h-10 text-[#d4af37]" />
+            </div>
+            <div className="text-center">
+              <h3 className="text-xl font-serif font-semibold text-white">Suelta las imágenes aquí</h3>
+              <p className="text-sm text-[#888] mt-2">Se subirán automáticamente a tu galería</p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Header */}
       <header className="sticky top-0 z-50 bg-[#0a0a0a]/95 backdrop-blur-md border-b border-[rgba(212,175,55,0.1)]">
@@ -449,7 +522,7 @@ export default function Home() {
                 {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
                 <span className="hidden sm:inline">{uploading ? 'Subiendo...' : 'Subir'}</span>
               </Button>
-              <input ref={fileInputRef} type="file" accept="image/*" multiple onChange={handleUpload} className="hidden" />
+              <input ref={fileInputRef} type="file" accept="image/*" multiple onChange={handleUpload} className="sr-only" tabIndex={-1} />
             </div>
           </div>
         </div>
