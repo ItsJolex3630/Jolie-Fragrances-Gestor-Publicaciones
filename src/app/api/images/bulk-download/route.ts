@@ -2,6 +2,51 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import JSZip from 'jszip';
 import path from 'path';
+import { readFileSync, existsSync } from 'fs';
+import { join } from 'path';
+
+async function getImageBuffer(imageId: string): Promise<{ buffer: Buffer; originalName: string } | null> {
+  // Get metadata first (without BLOB)
+  const imageMeta = await db.image.findUnique({
+    where: { id: imageId },
+    select: {
+      id: true,
+      originalName: true,
+      filePath: true,
+    },
+  });
+
+  if (!imageMeta) return null;
+
+  // Try to read from filePath first
+  if (imageMeta.filePath) {
+    const fullPath = join(process.cwd(), imageMeta.filePath);
+    if (existsSync(fullPath)) {
+      return {
+        buffer: readFileSync(fullPath),
+        originalName: imageMeta.originalName,
+      };
+    }
+  }
+
+  // Fall back to BLOB data
+  const imageWithData = await db.image.findUnique({
+    where: { id: imageId },
+    select: {
+      data: true,
+      originalName: true,
+    },
+  });
+
+  if (imageWithData?.data) {
+    return {
+      buffer: Buffer.from(imageWithData.data),
+      originalName: imageWithData.originalName,
+    };
+  }
+
+  return null;
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -15,27 +60,18 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const images = await db.image.findMany({
-      where: {
-        id: { in: ids },
-      },
-    });
-
-    if (images.length === 0) {
-      return NextResponse.json(
-        { error: 'No images found with the provided IDs' },
-        { status: 404 }
-      );
-    }
-
     const zip = new JSZip();
     const usedNames = new Set<string>();
 
-    for (const image of images) {
+    for (const id of ids) {
       try {
-        const fileBuffer = Buffer.from(image.data);
+        const result = await getImageBuffer(id);
+        if (!result) {
+          console.error(`Could not read data for image ${id}`);
+          continue;
+        }
 
-        let fileName = image.originalName;
+        let fileName = result.originalName;
         if (usedNames.has(fileName)) {
           const ext = path.extname(fileName);
           const base = path.basename(fileName, ext);
@@ -47,10 +83,17 @@ export async function POST(request: NextRequest) {
         }
         usedNames.add(fileName);
 
-        zip.file(fileName, fileBuffer);
+        zip.file(fileName, result.buffer);
       } catch (fileError) {
-        console.error(`Error processing file ${image.path}:`, fileError);
+        console.error(`Error processing file ${id}:`, fileError);
       }
+    }
+
+    if (usedNames.size === 0) {
+      return NextResponse.json(
+        { error: 'No images found with the provided IDs' },
+        { status: 404 }
+      );
     }
 
     const zipBuffer = await zip.generateAsync({

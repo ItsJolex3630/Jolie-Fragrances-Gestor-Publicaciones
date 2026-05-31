@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Search,
   Download,
@@ -22,6 +22,7 @@ import {
   Square,
   Sparkles,
   Lock,
+  RefreshCw,
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -81,6 +82,7 @@ interface ImageData {
   size: number;
   format: string;
   aspectRatio: string;
+  filePath: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -113,6 +115,15 @@ function formatFileSize(bytes: number): string {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
 }
 
+// Helper to get image URL - use static path if available, else API route
+function getImageUrl(image: ImageData): string {
+  if (image.filePath) {
+    // Convert "public/images/file.png" to "/images/file.png"
+    return '/' + image.filePath.replace(/^public\//, '');
+  }
+  return `/api/images/${image.id}/serve`;
+}
+
 function simplifyAspectRatio(ratio: string): string {
   const parts = ratio.split(':');
   if (parts.length !== 2) return ratio;
@@ -134,6 +145,7 @@ function simplifyAspectRatio(ratio: string): string {
 export default function Home() {
   const [images, setImages] = useState<ImageData[]>([]);
   const [loading, setLoading] = useState(true);
+  const [initializing, setInitializing] = useState(false);
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState<SortOption>('newest');
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
@@ -176,6 +188,24 @@ export default function Home() {
     };
   }, [cursorVisible]);
 
+  // Initialize database (auto-seed if empty)
+  const initializeDB = useCallback(async () => {
+    try {
+      setInitializing(true);
+      const res = await fetch('/api/init');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.seeded) {
+          toast({ title: 'Imágenes cargadas', description: data.message });
+        }
+      }
+    } catch (err) {
+      console.error('Error initializing:', err);
+    } finally {
+      setInitializing(false);
+    }
+  }, [toast]);
+
   // Fetch images
   const fetchImages = useCallback(async () => {
     try {
@@ -187,6 +217,16 @@ export default function Home() {
       if (res.ok) {
         const data = await res.json();
         setImages(data);
+        // If no images, try initializing
+        if (data.length === 0) {
+          await initializeDB();
+          // Re-fetch after initialization
+          const res2 = await fetch(`/api/images?${params.toString()}`);
+          if (res2.ok) {
+            const data2 = await res2.json();
+            setImages(data2);
+          }
+        }
       }
     } catch (err) {
       console.error('Error fetching images:', err);
@@ -194,7 +234,7 @@ export default function Home() {
     } finally {
       setLoading(false);
     }
-  }, [search, sort, toast]);
+  }, [search, sort, toast, initializeDB]);
 
   useEffect(() => {
     fetchImages();
@@ -377,6 +417,17 @@ export default function Home() {
 
             {/* Actions */}
             <div className="flex items-center gap-2 shrink-0">
+              {/* Refresh */}
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-10 w-10 text-[#888] hover:text-[#d4af37] hover:bg-[#d4af37]/10"
+                onClick={() => fetchImages()}
+                title="Recargar imágenes"
+              >
+                <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+              </Button>
+
               {/* Sort */}
               <Select value={sort} onValueChange={(v) => setSort(v as SortOption)}>
                 <SelectTrigger className="w-[140px] h-10 bg-[#111] border-[rgba(212,175,55,0.15)] text-white">
@@ -451,10 +502,10 @@ export default function Home() {
 
       {/* Main Content */}
       <main className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 py-8 hero-gradient">
-        {loading ? (
+        {loading || initializing ? (
           <div className="flex flex-col items-center justify-center py-20 gap-4">
             <div className="w-12 h-12 rounded-full border-2 border-[rgba(212,175,55,0.2)] border-t-[#d4af37] animate-spin" />
-            <p className="text-[#888] font-serif">Cargando imágenes...</p>
+            <p className="text-[#888] font-serif">{initializing ? 'Inicializando imágenes...' : 'Cargando imágenes...'}</p>
           </div>
         ) : images.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-24 gap-6">
@@ -502,7 +553,7 @@ export default function Home() {
                 {/* Image thumbnail */}
                 <div className="relative aspect-square overflow-hidden bg-gradient-to-br from-[#0a0a0a] to-[#1a1a1a]" onClick={() => openPreview(image)}>
                   <img
-                    src={`/api/images/${image.id}/serve`}
+                    src={getImageUrl(image)}
                     alt={image.originalName}
                     className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
                     loading="lazy"
@@ -586,7 +637,7 @@ export default function Home() {
               >
                 <Checkbox checked={selectedIds.has(image.id)} onCheckedChange={() => toggleSelect(image.id)} className="border-[#d4af37]/40 data-[state=checked]:bg-[#d4af37] data-[state=checked]:border-[#d4af37]" />
                 <div className="w-14 h-14 rounded-lg overflow-hidden bg-gradient-to-br from-[#0a0a0a] to-[#1a1a1a] shrink-0 border border-[rgba(212,175,55,0.08)]" onClick={(e) => { e.stopPropagation(); openPreview(image); }}>
-                  <img src={`/api/images/${image.id}/serve`} alt={image.originalName} className="w-full h-full object-cover" loading="lazy" />
+                  <img src={getImageUrl(image)} alt={image.originalName} className="w-full h-full object-cover" loading="lazy" />
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="font-medium text-sm truncate text-white">{image.originalName}</p>
@@ -634,7 +685,7 @@ export default function Home() {
           {previewImage && (
             <>
               <div className="relative bg-[#0a0a0a] flex items-center justify-center max-h-[70vh] overflow-auto">
-                <img src={`/api/images/${previewImage.id}/serve`} alt={previewImage.originalName} className="max-w-full max-h-[70vh] object-contain" />
+                <img src={getImageUrl(previewImage)} alt={previewImage.originalName} className="max-w-full max-h-[70vh] object-contain" />
               </div>
               <div className="p-5 space-y-4 bg-[#0a0a0a]">
                 <DialogHeader>
@@ -677,7 +728,7 @@ export default function Home() {
               {/* Preview */}
               <div className="flex gap-4">
                 <div className="w-24 h-24 rounded-lg overflow-hidden bg-gradient-to-br from-[#111] to-[#1a1a1a] shrink-0 border border-[rgba(212,175,55,0.1)]">
-                  <img src={`/api/images/${editingImage.id}/serve`} alt={editingImage.originalName} className="w-full h-full object-cover" />
+                  <img src={getImageUrl(editingImage)} alt={editingImage.originalName} className="w-full h-full object-cover" />
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="font-medium text-sm truncate text-white">{editingImage.originalName}</p>

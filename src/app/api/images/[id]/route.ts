@@ -20,6 +20,7 @@ export async function GET(
         size: true,
         format: true,
         aspectRatio: true,
+        filePath: true,
         createdAt: true,
         updatedAt: true,
       },
@@ -54,7 +55,7 @@ export async function DELETE(
       return NextResponse.json({ error: 'Image not found' }, { status: 404 });
     }
 
-    // Simply delete from database - no filesystem cleanup needed
+    // Delete from database - static files in public/images/ are preserved
     await db.image.delete({
       where: { id },
     });

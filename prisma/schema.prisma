@@ -32,7 +32,8 @@ model Image {
   id             String   @id @default(cuid())
   name           String
   originalName   String
-  data           Bytes    // Image binary data stored directly in DB
+  data           Bytes?   // Optional: for edited images stored in DB
+  filePath       String?  // Optional: path relative to project root for static images (e.g. "public/images/photo.png")
   mimeType       String   // e.g. "image/png", "image/jpeg"
   width          Int
   height         Int

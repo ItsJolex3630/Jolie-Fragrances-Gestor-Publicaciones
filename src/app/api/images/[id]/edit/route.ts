@@ -3,6 +3,8 @@ import { db } from '@/lib/db';
 import sharp from 'sharp';
 import { v4 as uuidv4 } from 'uuid';
 import path from 'path';
+import { readFileSync, existsSync } from 'fs';
+import { join } from 'path';
 
 const MIME_TYPES: Record<string, string> = {
   png: 'image/png',
@@ -15,6 +17,58 @@ const MIME_TYPES: Record<string, string> = {
   avif: 'image/avif',
 };
 
+async function getImageBuffer(imageId: string): Promise<{ buffer: Buffer; image: { originalName: string; width: number; height: number; format: string; filePath: string | null } } | null> {
+  // Get metadata first (without BLOB)
+  const imageMeta = await db.image.findUnique({
+    where: { id: imageId },
+    select: {
+      id: true,
+      originalName: true,
+      mimeType: true,
+      width: true,
+      height: true,
+      format: true,
+      filePath: true,
+    },
+  });
+
+  if (!imageMeta) return null;
+
+  // Try to read from filePath first
+  if (imageMeta.filePath) {
+    const fullPath = join(process.cwd(), imageMeta.filePath);
+    if (existsSync(fullPath)) {
+      const buffer = readFileSync(fullPath);
+      return {
+        buffer,
+        image: imageMeta,
+      };
+    }
+  }
+
+  // Fall back to BLOB data
+  const imageWithData = await db.image.findUnique({
+    where: { id: imageId },
+    select: {
+      data: true,
+      originalName: true,
+      width: true,
+      height: true,
+      format: true,
+      filePath: true,
+    },
+  });
+
+  if (imageWithData?.data) {
+    return {
+      buffer: Buffer.from(imageWithData.data),
+      image: imageWithData,
+    };
+  }
+
+  return null;
+}
+
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -22,13 +76,12 @@ export async function POST(
   try {
     const { id } = await params;
 
-    const originalImage = await db.image.findUnique({
-      where: { id },
-    });
-
-    if (!originalImage) {
+    const result = await getImageBuffer(id);
+    if (!result) {
       return NextResponse.json({ error: 'Image not found' }, { status: 404 });
     }
+
+    const { buffer: originalBuffer, image: originalImage } = result;
 
     const body = await request.json();
     const { aspectRatio, format, quality = 90 } = body;
@@ -40,7 +93,6 @@ export async function POST(
       );
     }
 
-    const originalBuffer = Buffer.from(originalImage.data);
     const originalWidth = originalImage.width;
     const originalHeight = originalImage.height;
 
@@ -102,12 +154,13 @@ export async function POST(
     const divisor = gcd(newWidth, newHeight);
     const newAspectRatio = `${newWidth / divisor}:${newHeight / divisor}`;
 
-    // Store edited image directly in the database
+    // Store edited image as BLOB in the database (no static file for edits)
     const newImage = await db.image.create({
       data: {
         name: uniqueName,
         originalName: `${path.parse(originalImage.originalName).name}${ratioSuffix}${ext}`,
         data: newBuffer,
+        filePath: null,
         mimeType,
         width: newWidth,
         height: newHeight,
@@ -125,6 +178,7 @@ export async function POST(
         size: true,
         format: true,
         aspectRatio: true,
+        filePath: true,
         createdAt: true,
         updatedAt: true,
       },

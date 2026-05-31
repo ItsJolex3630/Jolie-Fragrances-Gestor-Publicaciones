@@ -3,6 +3,7 @@ import { db } from '@/lib/db';
 import { imageSize } from 'image-size';
 import { v4 as uuidv4 } from 'uuid';
 import path from 'path';
+import { readFileSync, statSync } from 'fs';
 
 const MIME_TYPES: Record<string, string> = {
   png: 'image/png',
@@ -44,7 +45,6 @@ export async function GET(request: NextRequest) {
     const images = await db.image.findMany({
       where,
       orderBy,
-      // Exclude binary data from list queries for performance
       select: {
         id: true,
         name: true,
@@ -55,6 +55,7 @@ export async function GET(request: NextRequest) {
         size: true,
         format: true,
         aspectRatio: true,
+        filePath: true,
         createdAt: true,
         updatedAt: true,
       },
@@ -159,6 +160,7 @@ export async function POST(request: NextRequest) {
         name: uniqueName,
         originalName: file.name || `clipboard-image.${fileExt.replace('.', '')}`,
         data: buffer,
+        filePath: null,
         mimeType,
         width,
         height,
@@ -176,6 +178,7 @@ export async function POST(request: NextRequest) {
         size: true,
         format: true,
         aspectRatio: true,
+        filePath: true,
         createdAt: true,
         updatedAt: true,
       },
