@@ -272,34 +272,54 @@ export default function Home() {
   const fetchImages = useCallback(async () => {
     try {
       setLoading(true);
-      const res = await fetch('/api/images');
-      if (res.ok) {
-        const data = await res.json();
-        if (data.length > 0) {
-          setAllImages(data);
-        } else {
-          // Try initializing the DB
+      let loaded = false;
+
+      // Strategy 1: Try the API first
+      try {
+        const res = await fetch('/api/images');
+        if (res.ok) {
+          const data = await res.json();
+          if (data.length > 0) {
+            setAllImages(data);
+            loaded = true;
+          }
+        }
+      } catch {
+        // API unavailable, continue to next strategy
+      }
+
+      // Strategy 2: If API returned empty, try initializing DB and refetching (local dev)
+      if (!loaded) {
+        try {
           await initializeDB();
           const res2 = await fetch('/api/images');
           if (res2.ok) {
             const data2 = await res2.json();
             if (data2.length > 0) {
               setAllImages(data2);
-            } else {
-              // Fallback to metadata.json
-              const fallbackData = await loadFromMetadata();
-              setAllImages(fallbackData);
+              loaded = true;
             }
           }
+        } catch {
+          // Init failed, continue to fallback
         }
-      } else {
-        // API failed, use metadata.json fallback
+      }
+
+      // Strategy 3: Fallback to metadata.json (works on Vercel where SQLite is ephemeral)
+      if (!loaded) {
         const fallbackData = await loadFromMetadata();
-        setAllImages(fallbackData);
+        if (fallbackData.length > 0) {
+          setAllImages(fallbackData);
+          loaded = true;
+        }
+      }
+
+      if (!loaded) {
+        toast({ title: 'Error', description: 'No se pudieron cargar las imágenes', variant: 'destructive' });
       }
     } catch (err) {
       console.error('Error fetching images:', err);
-      // Try metadata.json fallback
+      // Last resort: try metadata.json
       const fallbackData = await loadFromMetadata();
       if (fallbackData.length > 0) {
         setAllImages(fallbackData);
@@ -490,12 +510,17 @@ export default function Home() {
                   placeholder="Buscar imagen por nombre..."
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  className="pl-9 pr-4 h-10 bg-[#111] border-[rgba(212,175,55,0.15)] text-white placeholder:text-[#555] focus:border-[#d4af37]/40 focus:ring-[#d4af37]/20 transition-all"
+                  className="pl-9 pr-16 h-10 bg-[#111] border-[rgba(212,175,55,0.15)] text-white placeholder:text-[#555] focus:border-[#d4af37]/40 focus:ring-[#d4af37]/20 transition-all"
                 />
                 {search && (
-                  <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#888] hover:text-[#d4af37] transition-colors">
-                    <X className="h-4 w-4" />
-                  </button>
+                  <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-2">
+                    <span className="text-[11px] text-[#d4af37]/70 font-medium">
+                      {images.length}/{allImages.length}
+                    </span>
+                    <button onClick={() => setSearch('')} className="text-[#888] hover:text-[#d4af37] transition-colors">
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
                 )}
               </div>
             </div>
