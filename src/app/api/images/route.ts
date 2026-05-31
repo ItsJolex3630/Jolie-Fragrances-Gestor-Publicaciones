@@ -5,7 +5,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { writeFile, mkdir } from 'fs/promises';
 import path from 'path';
 
-const UPLOAD_DIR = '/home/z/my-project/upload';
+const UPLOAD_DIR = process.env.UPLOAD_DIR || path.join(process.cwd(), 'upload');
 
 export async function GET(request: NextRequest) {
   try {
