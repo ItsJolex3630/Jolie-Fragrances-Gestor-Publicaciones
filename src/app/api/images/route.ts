@@ -72,6 +72,16 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    // API key protection - only admin can upload
+    const apiKey = request.headers.get('x-api-key') || request.headers.get('authorization')?.replace('Bearer ', '');
+    const validApiKey = process.env.ADMIN_API_KEY || 'jolie-admin-2024';
+    if (apiKey !== validApiKey) {
+      return NextResponse.json(
+        { error: 'No autorizado. Se requiere API key válida.' },
+        { status: 401 }
+      );
+    }
+
     let formData: FormData;
     try {
       formData = await request.formData();

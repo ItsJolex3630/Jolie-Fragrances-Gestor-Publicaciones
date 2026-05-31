@@ -3,7 +3,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Search,
-  Upload,
   Download,
   Trash2,
   Edit3,
@@ -22,7 +21,7 @@ import {
   Settings2,
   Square,
   Sparkles,
-  ChevronDown,
+  Lock,
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -139,7 +138,6 @@ export default function Home() {
   const [sort, setSort] = useState<SortOption>('newest');
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [uploading, setUploading] = useState(false);
   const [deleting, setDeleting] = useState<string | null>(null);
   const [bulkDownloading, setBulkDownloading] = useState(false);
   const [cursorPos, setCursorPos] = useState({ x: 0, y: 0 });
@@ -161,7 +159,6 @@ export default function Home() {
 
   const [bulkDeleteDialogOpen, setBulkDeleteDialogOpen] = useState(false);
 
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
 
   // Cursor glow
@@ -202,119 +199,6 @@ export default function Home() {
   useEffect(() => {
     fetchImages();
   }, [fetchImages]);
-
-  // Upload files (from input, drag & drop, or paste)
-  const uploadFiles = useCallback(async (files: FileList | File[]) => {
-    if (!files || files.length === 0) return;
-    setUploading(true);
-    let successCount = 0;
-    let errorCount = 0;
-    const errorMessages: string[] = [];
-    for (const file of Array.from(files)) {
-      // Validate file type on client side - accept empty type too (clipboard images)
-      if (file.type && !file.type.startsWith('image/')) {
-        errorCount++;
-        errorMessages.push(`"${file.name}" no es una imagen válida`);
-        continue;
-      }
-      try {
-        const formData = new FormData();
-        formData.append('file', file);
-        const res = await fetch('/api/images', { method: 'POST', body: formData });
-        if (res.ok) {
-          successCount++;
-        } else {
-          let errData = { error: 'Error desconocido' };
-          try {
-            errData = await res.json();
-          } catch {
-            // Response wasn't JSON
-            errData = { error: `Error del servidor (${res.status})` };
-          }
-          console.error('Upload error:', errData);
-          errorCount++;
-          errorMessages.push(errData.error || `Error al subir "${file.name}"`);
-        }
-      } catch (err) {
-        console.error('Upload network error:', err);
-        errorCount++;
-        errorMessages.push(`Error de red al subir "${file.name}"`);
-      }
-    }
-    setUploading(false);
-    if (fileInputRef.current) fileInputRef.current.value = '';
-    await fetchImages();
-    if (successCount > 0) toast({ title: 'Carga exitosa', description: `${successCount} imagen(es) subida(s)` });
-    if (errorCount > 0) {
-      const firstErrors = errorMessages.slice(0, 3).join('\n');
-      const moreErrors = errorMessages.length > 3 ? `\n...y ${errorMessages.length - 3} más` : '';
-      toast({ title: 'Error al subir', description: `${firstErrors}${moreErrors}`, variant: 'destructive' });
-    }
-  }, [fetchImages, toast]);
-
-  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (files) await uploadFiles(files);
-  };
-
-  // Paste handler - Ctrl+V to paste images from clipboard
-  useEffect(() => {
-    const handlePaste = async (e: ClipboardEvent) => {
-      const items = e.clipboardData?.items;
-      if (!items) return;
-      const imageFiles: File[] = [];
-      for (const item of Array.from(items)) {
-        if (item.type.startsWith('image/')) {
-          const file = item.getAsFile();
-          if (file) imageFiles.push(file);
-        }
-      }
-      if (imageFiles.length > 0) {
-        e.preventDefault();
-        await uploadFiles(imageFiles);
-      }
-    };
-    document.addEventListener('paste', handlePaste);
-    return () => document.removeEventListener('paste', handlePaste);
-  }, [uploadFiles]);
-
-  // Drag & Drop handlers
-  const [isDragging, setIsDragging] = useState(false);
-  const dragCounter = useRef(0);
-
-  const handleDragEnter = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    dragCounter.current++;
-    if (e.dataTransfer.items && e.dataTransfer.items.length > 0) {
-      setIsDragging(true);
-    }
-  };
-
-  const handleDragLeave = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    dragCounter.current--;
-    if (dragCounter.current === 0) {
-      setIsDragging(false);
-    }
-  };
-
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-  };
-
-  const handleDrop = async (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragging(false);
-    dragCounter.current = 0;
-    const files = e.dataTransfer.files;
-    if (files && files.length > 0) {
-      await uploadFiles(files);
-    }
-  };
 
   // Download single
   const handleDownload = async (image: ImageData) => {
@@ -443,12 +327,7 @@ export default function Home() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-[#0a0a0a] text-white"
-      onDragEnter={handleDragEnter}
-      onDragLeave={handleDragLeave}
-      onDragOver={handleDragOver}
-      onDrop={handleDrop}
-    >
+    <div className="min-h-screen flex flex-col bg-[#0a0a0a] text-white">
       {/* Cursor Glow */}
       <div
         className="cursor-glow"
@@ -457,21 +336,6 @@ export default function Home() {
           opacity: cursorVisible ? 1 : 0,
         }}
       />
-
-      {/* Drag & Drop Overlay */}
-      {isDragging && (
-        <div className="fixed inset-0 z-[100] bg-[#0a0a0a]/90 backdrop-blur-md flex items-center justify-center">
-          <div className="flex flex-col items-center gap-6 p-12 rounded-2xl border-2 border-dashed border-[#d4af37]/60 bg-[#0a0a0a]/80 gold-glow">
-            <div className="w-20 h-20 rounded-2xl bg-[#d4af37]/10 flex items-center justify-center">
-              <Upload className="w-10 h-10 text-[#d4af37]" />
-            </div>
-            <div className="text-center">
-              <h3 className="text-xl font-serif font-semibold text-white">Suelta las imágenes aquí</h3>
-              <p className="text-sm text-[#888] mt-2">Se subirán automáticamente a tu galería</p>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Header */}
       <header className="sticky top-0 z-50 bg-[#0a0a0a]/95 backdrop-blur-md border-b border-[rgba(212,175,55,0.1)]">
@@ -548,15 +412,11 @@ export default function Home() {
                 </Button>
               </div>
 
-              {/* Upload - using label for native file input trigger (works in iframes) */}
-              <label
-                htmlFor="image-upload-input"
-                className={`inline-flex items-center justify-center h-10 gap-2 rounded-md px-4 py-2 text-sm font-semibold transition-all cursor-pointer select-none ${uploading ? 'opacity-70 pointer-events-none' : 'bg-gradient-to-r from-[#d4af37] to-[#b8941e] text-[#0a0a0a] hover:from-[#e8cc6e] hover:to-[#d4af37] gold-glow-hover'}`}
-              >
-                {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
-                <span className="hidden sm:inline">{uploading ? 'Subiendo...' : 'Subir'}</span>
-              </label>
-              <input id="image-upload-input" ref={fileInputRef} type="file" accept="image/*" multiple onChange={handleUpload} className="sr-only" />
+              {/* Admin badge */}
+              <div className="hidden sm:flex items-center gap-1.5 px-3 h-10 rounded-md bg-[#111] border border-[rgba(212,175,55,0.1)] text-[#555] text-xs">
+                <Lock className="h-3.5 w-3.5" />
+                <span>Solo admin</span>
+              </div>
             </div>
           </div>
         </div>
@@ -604,18 +464,15 @@ export default function Home() {
             <div className="text-center">
               <h3 className="text-xl font-serif font-semibold text-white">No hay imágenes</h3>
               <p className="text-[#888] text-sm mt-2 max-w-xs">
-                {search ? 'No se encontraron resultados para tu búsqueda' : 'Sube tu primera imagen para comenzar a gestionar tus publicaciones'}
+                {search ? 'No se encontraron resultados para tu búsqueda' : 'Las imágenes se agregan por administración'}
               </p>
               {!search && (
-                <p className="text-[#555] text-xs mt-3">Arrastra imágenes aquí · Ctrl+V para pegar · O haz clic en Subir</p>
+                <div className="flex items-center gap-2 mt-4 px-4 py-2 rounded-lg bg-[#111] border border-[rgba(212,175,55,0.1)]">
+                  <Lock className="h-4 w-4 text-[#d4af37]/50" />
+                  <p className="text-[#555] text-xs">Las imágenes son gestionadas por el administrador</p>
+                </div>
               )}
             </div>
-            {!search && (
-              <label htmlFor="image-upload-input" className="inline-flex items-center justify-center gap-2 rounded-md px-4 py-2 text-sm font-semibold cursor-pointer select-none bg-gradient-to-r from-[#d4af37] to-[#b8941e] text-[#0a0a0a] hover:from-[#e8cc6e] hover:to-[#d4af37] gold-glow-hover transition-all">
-                <Upload className="h-4 w-4" />
-                Subir imagen
-              </label>
-            )}
           </div>
         ) : viewMode === 'grid' ? (
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
