@@ -3,7 +3,7 @@ import { db } from '@/lib/db';
 import { imageSize } from 'image-size';
 import { v4 as uuidv4 } from 'uuid';
 import path from 'path';
-import { readFileSync, statSync } from 'fs';
+import { readFileSync, existsSync } from 'fs';
 
 const MIME_TYPES: Record<string, string> = {
   png: 'image/png',
@@ -16,54 +16,118 @@ const MIME_TYPES: Record<string, string> = {
   avif: 'image/avif',
 };
 
+interface ImageMetadata {
+  file: string;
+  originalName: string;
+  mimeType: string;
+  width: number;
+  height: number;
+  size: number;
+  format: string;
+  aspectRatio: string;
+}
+
+// Helper: load images from metadata.json when DB is empty/unavailable
+function loadFromMetadata(): Array<Record<string, unknown>> {
+  try {
+    const metadataPath = path.join(process.cwd(), 'public', 'images', 'metadata.json');
+    if (!existsSync(metadataPath)) return [];
+
+    const raw = readFileSync(metadataPath, 'utf-8');
+    const metadata: ImageMetadata[] = JSON.parse(raw);
+
+    return metadata.map((img) => ({
+      id: `static-${img.file.replace(/\.[^/.]+$/, '')}`,
+      name: img.file,
+      originalName: img.originalName,
+      mimeType: img.mimeType,
+      width: img.width,
+      height: img.height,
+      size: img.size,
+      format: img.format,
+      aspectRatio: img.aspectRatio,
+      filePath: `public/images/${img.file}`,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    }));
+  } catch {
+    return [];
+  }
+}
+
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const search = searchParams.get('search') || '';
     const sort = searchParams.get('sort') || 'newest';
 
-    const where = search
-      ? {
-          OR: [
-            { name: { contains: search, mode: 'insensitive' } },
-            { originalName: { contains: search, mode: 'insensitive' } },
-          ],
-        }
-      : {};
+    // Always start with static images from metadata.json (these are always available)
+    const staticImages = loadFromMetadata();
 
-    const orderBy: Record<string, string> =
-      sort === 'oldest'
-        ? { createdAt: 'asc' }
-        : sort === 'name'
-          ? { name: 'asc' }
-          : sort === 'size_asc'
-            ? { size: 'asc' }
-            : sort === 'size_desc'
-              ? { size: 'desc' }
-              : { createdAt: 'desc' };
+    // Try to also get DB images (user-edited/created images)
+    let dbImages: Array<Record<string, unknown>> = [];
+    try {
+      const dbResult = await db.image.findMany({
+        orderBy: { createdAt: 'desc' },
+        select: {
+          id: true,
+          name: true,
+          originalName: true,
+          mimeType: true,
+          width: true,
+          height: true,
+          size: true,
+          format: true,
+          aspectRatio: true,
+          filePath: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+      });
+      dbImages = dbResult as Array<Record<string, unknown>>;
+    } catch (dbError) {
+      console.error('DB query failed, using metadata only:', dbError);
+    }
 
-    const images = await db.image.findMany({
-      where,
-      orderBy,
-      select: {
-        id: true,
-        name: true,
-        originalName: true,
-        mimeType: true,
-        width: true,
-        height: true,
-        size: true,
-        format: true,
-        aspectRatio: true,
-        filePath: true,
-        createdAt: true,
-        updatedAt: true,
-      },
+    // Merge: start with static images, then add DB images that aren't already covered
+    const staticFileNames = new Set(staticImages.map((img) => String(img.name)));
+    const extraDbImages = dbImages.filter((img) => {
+      // Include DB images that have filePath pointing to static files already covered
+      const fp = String(img.filePath || '');
+      if (fp.startsWith('public/images/')) {
+        const fileName = fp.replace('public/images/', '');
+        if (staticFileNames.has(fileName)) return false; // Already in static list
+      }
+      return true; // This is a user-created/edited image not in static list
+    });
+
+    // Combine: static images first, then extra DB images
+    let images = [...staticImages, ...extraDbImages];
+
+    // Apply sort (client-side does this too, but API should be consistent)
+    images.sort((a, b) => {
+      switch (sort) {
+        case 'oldest':
+          return new Date(String(a.createdAt)).getTime() - new Date(String(b.createdAt)).getTime();
+        case 'name':
+          return String(a.originalName).localeCompare(String(b.originalName));
+        case 'size_asc':
+          return Number(a.size) - Number(b.size);
+        case 'size_desc':
+          return Number(b.size) - Number(a.size);
+        case 'newest':
+        default:
+          return new Date(String(b.createdAt)).getTime() - new Date(String(a.createdAt)).getTime();
+      }
     });
 
     return NextResponse.json(images);
   } catch (error) {
     console.error('Error listing images:', error);
+    // Last resort: try metadata.json
+    const fallback = loadFromMetadata();
+    if (fallback.length > 0) {
+      return NextResponse.json(fallback);
+    }
     return NextResponse.json(
       { error: 'Failed to list images' },
       { status: 500 }

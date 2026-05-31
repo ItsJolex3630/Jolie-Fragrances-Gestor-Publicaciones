@@ -145,7 +145,6 @@ function simplifyAspectRatio(ratio: string): string {
 export default function Home() {
   const [allImages, setAllImages] = useState<ImageData[]>([]);
   const [loading, setLoading] = useState(true);
-  const [initializing, setInitializing] = useState(false);
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState<SortOption>('newest');
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
@@ -188,51 +187,6 @@ export default function Home() {
     };
   }, [cursorVisible]);
 
-  // Initialize database (auto-seed if empty)
-  const initializeDB = useCallback(async () => {
-    try {
-      setInitializing(true);
-      const res = await fetch('/api/init');
-      if (res.ok) {
-        const data = await res.json();
-        if (data.seeded) {
-          toast({ title: 'Imágenes cargadas', description: data.message });
-        }
-      }
-    } catch (err) {
-      console.error('Error initializing:', err);
-    } finally {
-      setInitializing(false);
-    }
-  }, [toast]);
-
-  // Fallback: load images from metadata.json if DB is unavailable
-  const loadFromMetadata = useCallback(async () => {
-    try {
-      const res = await fetch('/images/metadata.json');
-      if (res.ok) {
-        const metadata = await res.json();
-        return metadata.map((img: { file: string; originalName: string; mimeType: string; width: number; height: number; size: number; format: string; aspectRatio: string }) => ({
-          id: `static-${img.file.replace(/\.[^/.]+$/, '')}`,
-          name: img.file,
-          originalName: img.originalName,
-          mimeType: img.mimeType,
-          width: img.width,
-          height: img.height,
-          size: img.size,
-          format: img.format,
-          aspectRatio: img.aspectRatio,
-          filePath: `public/images/${img.file}`,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        }));
-      }
-    } catch (err) {
-      console.error('Error loading metadata:', err);
-    }
-    return [];
-  }, []);
-
   // Client-side search and sort
   const images = useMemo(() => {
     let result = [...allImages];
@@ -272,68 +226,61 @@ export default function Home() {
     return result;
   }, [allImages, search, sort]);
 
-  // Fetch all images (no search/sort params - we filter client-side)
+  // Fetch all images — try API first, then static metadata.json
   const fetchImages = useCallback(async () => {
     try {
       setLoading(true);
-      let loaded = false;
 
-      // Strategy 1: Try the API first
+      // Strategy 1: Try the API (includes metadata.json fallback built-in)
       try {
         const res = await fetch('/api/images');
         if (res.ok) {
           const data = await res.json();
-          if (data.length > 0) {
+          if (Array.isArray(data) && data.length > 0) {
             setAllImages(data);
-            loaded = true;
+            return;
           }
         }
       } catch {
-        // API unavailable, continue to next strategy
+        // API failed, continue to direct metadata.json
       }
 
-      // Strategy 2: If API returned empty, try initializing DB and refetching (local dev)
-      if (!loaded) {
-        try {
-          await initializeDB();
-          const res2 = await fetch('/api/images');
-          if (res2.ok) {
-            const data2 = await res2.json();
-            if (data2.length > 0) {
-              setAllImages(data2);
-              loaded = true;
-            }
+      // Strategy 2: Load directly from static metadata.json (always available)
+      try {
+        const res = await fetch('/images/metadata.json');
+        if (res.ok) {
+          const metadata = await res.json();
+          const mapped = metadata.map((img: { file: string; originalName: string; mimeType: string; width: number; height: number; size: number; format: string; aspectRatio: string }) => ({
+            id: `static-${img.file.replace(/\.[^/.]+$/, '')}`,
+            name: img.file,
+            originalName: img.originalName,
+            mimeType: img.mimeType,
+            width: img.width,
+            height: img.height,
+            size: img.size,
+            format: img.format,
+            aspectRatio: img.aspectRatio,
+            filePath: `public/images/${img.file}`,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          }));
+          if (mapped.length > 0) {
+            setAllImages(mapped);
+            return;
           }
-        } catch {
-          // Init failed, continue to fallback
         }
+      } catch {
+        // metadata.json also failed
       }
 
-      // Strategy 3: Fallback to metadata.json (works on Vercel where SQLite is ephemeral)
-      if (!loaded) {
-        const fallbackData = await loadFromMetadata();
-        if (fallbackData.length > 0) {
-          setAllImages(fallbackData);
-          loaded = true;
-        }
-      }
-
-      if (!loaded) {
-        toast({ title: 'Error', description: 'No se pudieron cargar las imágenes', variant: 'destructive' });
-      }
+      setAllImages([]);
     } catch (err) {
       console.error('Error fetching images:', err);
-      // Last resort: try metadata.json
-      const fallbackData = await loadFromMetadata();
-      if (fallbackData.length > 0) {
-        setAllImages(fallbackData);
-      } else {
-        toast({ title: 'Error', description: 'No se pudieron cargar las imágenes', variant: 'destructive' });
-      }
+      setAllImages([]);
     } finally {
       setLoading(false);
     }
-  }, [toast, initializeDB, loadFromMetadata]);
+  }, []);
 
   useEffect(() => {
     fetchImages();
@@ -616,10 +563,10 @@ export default function Home() {
 
       {/* Main Content */}
       <main className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 py-8 hero-gradient">
-        {loading || initializing ? (
+        {loading ? (
           <div className="flex flex-col items-center justify-center py-20 gap-4">
             <div className="w-12 h-12 rounded-full border-2 border-[rgba(212,175,55,0.2)] border-t-[#d4af37] animate-spin" />
-            <p className="text-[#888] font-serif">{initializing ? 'Inicializando imágenes...' : 'Cargando imágenes...'}</p>
+            <p className="text-[#888] font-serif">Cargando imágenes...</p>
           </div>
         ) : images.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-24 gap-6">
