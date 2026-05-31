@@ -203,16 +203,16 @@ export default function Home() {
     fetchImages();
   }, [fetchImages]);
 
-  // Upload files (from input or drag & drop)
-  const uploadFiles = async (files: FileList | File[]) => {
+  // Upload files (from input, drag & drop, or paste)
+  const uploadFiles = useCallback(async (files: FileList | File[]) => {
     if (!files || files.length === 0) return;
     setUploading(true);
     let successCount = 0;
     let errorCount = 0;
     const errorMessages: string[] = [];
     for (const file of Array.from(files)) {
-      // Validate file type on client side too
-      if (!file.type.startsWith('image/')) {
+      // Validate file type on client side - accept empty type too (clipboard images)
+      if (file.type && !file.type.startsWith('image/')) {
         errorCount++;
         errorMessages.push(`"${file.name}" no es una imagen válida`);
         continue;
@@ -224,7 +224,13 @@ export default function Home() {
         if (res.ok) {
           successCount++;
         } else {
-          const errData = await res.json().catch(() => ({ error: 'Error desconocido' }));
+          let errData = { error: 'Error desconocido' };
+          try {
+            errData = await res.json();
+          } catch {
+            // Response wasn't JSON
+            errData = { error: `Error del servidor (${res.status})` };
+          }
           console.error('Upload error:', errData);
           errorCount++;
           errorMessages.push(errData.error || `Error al subir "${file.name}"`);
@@ -238,13 +244,13 @@ export default function Home() {
     setUploading(false);
     if (fileInputRef.current) fileInputRef.current.value = '';
     await fetchImages();
-    if (successCount > 0) toast({ title: '✓ Carga exitosa', description: `${successCount} imagen(es) subida(s)` });
+    if (successCount > 0) toast({ title: 'Carga exitosa', description: `${successCount} imagen(es) subida(s)` });
     if (errorCount > 0) {
       const firstErrors = errorMessages.slice(0, 3).join('\n');
       const moreErrors = errorMessages.length > 3 ? `\n...y ${errorMessages.length - 3} más` : '';
       toast({ title: 'Error al subir', description: `${firstErrors}${moreErrors}`, variant: 'destructive' });
     }
-  };
+  }, [fetchImages, toast]);
 
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -252,26 +258,25 @@ export default function Home() {
   };
 
   // Paste handler - Ctrl+V to paste images from clipboard
-  const handlePaste = useCallback(async (e: ClipboardEvent) => {
-    const items = e.clipboardData?.items;
-    if (!items) return;
-    const imageFiles: File[] = [];
-    for (const item of Array.from(items)) {
-      if (item.type.startsWith('image/')) {
-        const file = item.getAsFile();
-        if (file) imageFiles.push(file);
-      }
-    }
-    if (imageFiles.length > 0) {
-      e.preventDefault();
-      await uploadFiles(imageFiles);
-    }
-  }, [uploadFiles]);
-
   useEffect(() => {
+    const handlePaste = async (e: ClipboardEvent) => {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      const imageFiles: File[] = [];
+      for (const item of Array.from(items)) {
+        if (item.type.startsWith('image/')) {
+          const file = item.getAsFile();
+          if (file) imageFiles.push(file);
+        }
+      }
+      if (imageFiles.length > 0) {
+        e.preventDefault();
+        await uploadFiles(imageFiles);
+      }
+    };
     document.addEventListener('paste', handlePaste);
     return () => document.removeEventListener('paste', handlePaste);
-  }, [handlePaste]);
+  }, [uploadFiles]);
 
   // Drag & Drop handlers
   const [isDragging, setIsDragging] = useState(false);

@@ -76,8 +76,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Validate file type
-    if (!file.type.startsWith('image/')) {
+    // Validate file type - accept empty type (clipboard images may not have MIME type)
+    // We'll validate the actual image data with sharp later
+    if (file.type && !file.type.startsWith('image/')) {
       return NextResponse.json(
         { error: `El archivo "${file.name}" no es una imagen válida. Formatos aceptados: PNG, JPEG, WebP, GIF, etc.` },
         { status: 400 }
