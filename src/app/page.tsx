@@ -206,6 +206,33 @@ export default function Home() {
     }
   }, [toast]);
 
+  // Fallback: load images from metadata.json if DB is unavailable
+  const loadFromMetadata = useCallback(async () => {
+    try {
+      const res = await fetch('/images/metadata.json');
+      if (res.ok) {
+        const metadata = await res.json();
+        return metadata.map((img: { file: string; originalName: string; mimeType: string; width: number; height: number; size: number; format: string; aspectRatio: string }) => ({
+          id: `static-${img.file.replace(/\.[^/.]+$/, '')}`,
+          name: img.file,
+          originalName: img.originalName,
+          mimeType: img.mimeType,
+          width: img.width,
+          height: img.height,
+          size: img.size,
+          format: img.format,
+          aspectRatio: img.aspectRatio,
+          filePath: `public/images/${img.file}`,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        }));
+      }
+    } catch (err) {
+      console.error('Error loading metadata:', err);
+    }
+    return [];
+  }, []);
+
   // Fetch images
   const fetchImages = useCallback(async () => {
     try {
@@ -216,25 +243,41 @@ export default function Home() {
       const res = await fetch(`/api/images?${params.toString()}`);
       if (res.ok) {
         const data = await res.json();
-        setImages(data);
-        // If no images, try initializing
-        if (data.length === 0) {
+        if (data.length > 0) {
+          setImages(data);
+        } else {
+          // Try initializing the DB
           await initializeDB();
-          // Re-fetch after initialization
           const res2 = await fetch(`/api/images?${params.toString()}`);
           if (res2.ok) {
             const data2 = await res2.json();
-            setImages(data2);
+            if (data2.length > 0) {
+              setImages(data2);
+            } else {
+              // Fallback to metadata.json
+              const fallbackData = await loadFromMetadata();
+              setImages(fallbackData);
+            }
           }
         }
+      } else {
+        // API failed, use metadata.json fallback
+        const fallbackData = await loadFromMetadata();
+        setImages(fallbackData);
       }
     } catch (err) {
       console.error('Error fetching images:', err);
-      toast({ title: 'Error', description: 'No se pudieron cargar las imágenes', variant: 'destructive' });
+      // Try metadata.json fallback
+      const fallbackData = await loadFromMetadata();
+      if (fallbackData.length > 0) {
+        setImages(fallbackData);
+      } else {
+        toast({ title: 'Error', description: 'No se pudieron cargar las imágenes', variant: 'destructive' });
+      }
     } finally {
       setLoading(false);
     }
-  }, [search, sort, toast, initializeDB]);
+  }, [search, sort, toast, initializeDB, loadFromMetadata]);
 
   useEffect(() => {
     fetchImages();
@@ -243,6 +286,16 @@ export default function Home() {
   // Download single
   const handleDownload = async (image: ImageData) => {
     try {
+      // For static images (metadata.json fallback), use direct URL
+      if (image.id.startsWith('static-')) {
+        const url = getImageUrl(image);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = image.originalName;
+        a.click();
+        toast({ title: 'Descargado', description: `${image.originalName}` });
+        return;
+      }
       const res = await fetch(`/api/images/${image.id}/download`);
       if (!res.ok) throw new Error();
       const blob = await res.blob();
