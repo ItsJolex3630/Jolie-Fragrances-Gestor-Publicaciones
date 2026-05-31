@@ -209,10 +209,12 @@ export default function Home() {
     setUploading(true);
     let successCount = 0;
     let errorCount = 0;
+    const errorMessages: string[] = [];
     for (const file of Array.from(files)) {
-      // Validate file type
+      // Validate file type on client side too
       if (!file.type.startsWith('image/')) {
         errorCount++;
+        errorMessages.push(`"${file.name}" no es una imagen válida`);
         continue;
       }
       try {
@@ -222,26 +224,54 @@ export default function Home() {
         if (res.ok) {
           successCount++;
         } else {
-          const errData = await res.json().catch(() => ({}));
+          const errData = await res.json().catch(() => ({ error: 'Error desconocido' }));
           console.error('Upload error:', errData);
           errorCount++;
+          errorMessages.push(errData.error || `Error al subir "${file.name}"`);
         }
       } catch (err) {
         console.error('Upload network error:', err);
         errorCount++;
+        errorMessages.push(`Error de red al subir "${file.name}"`);
       }
     }
     setUploading(false);
     if (fileInputRef.current) fileInputRef.current.value = '';
     await fetchImages();
-    if (successCount > 0) toast({ title: 'Carga exitosa', description: `${successCount} imagen(es) subida(s)` });
-    if (errorCount > 0) toast({ title: 'Error', description: `${errorCount} imagen(es) fallaron al subir. Asegúrate de que sean archivos de imagen válidos.`, variant: 'destructive' });
+    if (successCount > 0) toast({ title: '✓ Carga exitosa', description: `${successCount} imagen(es) subida(s)` });
+    if (errorCount > 0) {
+      const firstErrors = errorMessages.slice(0, 3).join('\n');
+      const moreErrors = errorMessages.length > 3 ? `\n...y ${errorMessages.length - 3} más` : '';
+      toast({ title: 'Error al subir', description: `${firstErrors}${moreErrors}`, variant: 'destructive' });
+    }
   };
 
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (files) await uploadFiles(files);
   };
+
+  // Paste handler - Ctrl+V to paste images from clipboard
+  const handlePaste = useCallback(async (e: ClipboardEvent) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    const imageFiles: File[] = [];
+    for (const item of Array.from(items)) {
+      if (item.type.startsWith('image/')) {
+        const file = item.getAsFile();
+        if (file) imageFiles.push(file);
+      }
+    }
+    if (imageFiles.length > 0) {
+      e.preventDefault();
+      await uploadFiles(imageFiles);
+    }
+  }, [uploadFiles]);
+
+  useEffect(() => {
+    document.addEventListener('paste', handlePaste);
+    return () => document.removeEventListener('paste', handlePaste);
+  }, [handlePaste]);
 
   // Drag & Drop handlers
   const [isDragging, setIsDragging] = useState(false);
@@ -513,16 +543,15 @@ export default function Home() {
                 </Button>
               </div>
 
-              {/* Upload */}
-              <Button
-                onClick={() => fileInputRef.current?.click()}
-                disabled={uploading}
-                className="h-10 gap-2 bg-gradient-to-r from-[#d4af37] to-[#b8941e] text-[#0a0a0a] hover:from-[#e8cc6e] hover:to-[#d4af37] font-semibold gold-glow-hover transition-all"
+              {/* Upload - using label for native file input trigger (works in iframes) */}
+              <label
+                htmlFor="image-upload-input"
+                className={`inline-flex items-center justify-center h-10 gap-2 rounded-md px-4 py-2 text-sm font-semibold transition-all cursor-pointer select-none ${uploading ? 'opacity-70 pointer-events-none' : 'bg-gradient-to-r from-[#d4af37] to-[#b8941e] text-[#0a0a0a] hover:from-[#e8cc6e] hover:to-[#d4af37] gold-glow-hover'}`}
               >
                 {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
                 <span className="hidden sm:inline">{uploading ? 'Subiendo...' : 'Subir'}</span>
-              </Button>
-              <input ref={fileInputRef} type="file" accept="image/*" multiple onChange={handleUpload} className="sr-only" tabIndex={-1} />
+              </label>
+              <input id="image-upload-input" ref={fileInputRef} type="file" accept="image/*" multiple onChange={handleUpload} className="sr-only" />
             </div>
           </div>
         </div>
@@ -572,12 +601,15 @@ export default function Home() {
               <p className="text-[#888] text-sm mt-2 max-w-xs">
                 {search ? 'No se encontraron resultados para tu búsqueda' : 'Sube tu primera imagen para comenzar a gestionar tus publicaciones'}
               </p>
+              {!search && (
+                <p className="text-[#555] text-xs mt-3">Arrastra imágenes aquí · Ctrl+V para pegar · O haz clic en Subir</p>
+              )}
             </div>
             {!search && (
-              <Button onClick={() => fileInputRef.current?.click()} className="gap-2 bg-gradient-to-r from-[#d4af37] to-[#b8941e] text-[#0a0a0a] hover:from-[#e8cc6e] hover:to-[#d4af37] font-semibold gold-glow-hover">
+              <label htmlFor="image-upload-input" className="inline-flex items-center justify-center gap-2 rounded-md px-4 py-2 text-sm font-semibold cursor-pointer select-none bg-gradient-to-r from-[#d4af37] to-[#b8941e] text-[#0a0a0a] hover:from-[#e8cc6e] hover:to-[#d4af37] gold-glow-hover transition-all">
                 <Upload className="h-4 w-4" />
                 Subir imagen
-              </Button>
+              </label>
             )}
           </div>
         ) : viewMode === 'grid' ? (

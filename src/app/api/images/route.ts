@@ -7,6 +7,11 @@ import path from 'path';
 
 const UPLOAD_DIR = process.env.UPLOAD_DIR || path.join(process.cwd(), 'upload');
 
+// Use Node.js runtime for file system access (not Edge)
+export const runtime = 'nodejs';
+// Allow dynamic rendering
+export const dynamic = 'force-dynamic';
+
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
@@ -50,11 +55,42 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const formData = await request.formData();
+    // Try to parse form data with better error handling
+    let formData: FormData;
+    try {
+      formData = await request.formData();
+    } catch (formError) {
+      console.error('Error parsing form data:', formError);
+      return NextResponse.json(
+        { error: 'No se pudo procesar el archivo. Intenta con una imagen más pequeña o formato diferente.' },
+        { status: 400 }
+      );
+    }
+
     const file = formData.get('file') as File | null;
 
     if (!file) {
-      return NextResponse.json({ error: 'No file provided' }, { status: 400 });
+      return NextResponse.json(
+        { error: 'No se proporcionó ningún archivo' },
+        { status: 400 }
+      );
+    }
+
+    // Validate file type
+    if (!file.type.startsWith('image/')) {
+      return NextResponse.json(
+        { error: `El archivo "${file.name}" no es una imagen válida. Formatos aceptados: PNG, JPEG, WebP, GIF, etc.` },
+        { status: 400 }
+      );
+    }
+
+    // Validate file size (max 50MB)
+    const MAX_SIZE = 50 * 1024 * 1024;
+    if (file.size > MAX_SIZE) {
+      return NextResponse.json(
+        { error: `El archivo "${file.name}" excede el tamaño máximo de 50MB` },
+        { status: 400 }
+      );
     }
 
     // Ensure upload directory exists
@@ -70,7 +106,18 @@ export async function POST(request: NextRequest) {
     await writeFile(filePath, buffer);
 
     // Get image metadata using sharp
-    const metadata = await sharp(filePath).metadata();
+    let metadata;
+    try {
+      metadata = await sharp(filePath).metadata();
+    } catch (sharpError) {
+      console.error('Error reading image metadata:', sharpError);
+      // If sharp can't read the file, it might be corrupted
+      return NextResponse.json(
+        { error: `No se pudo leer la imagen "${file.name}". El archivo podría estar corrupto o en un formato no soportado.` },
+        { status: 400 }
+      );
+    }
+
     const width = metadata.width || 0;
     const height = metadata.height || 0;
     const format = metadata.format || ext.replace('.', '');
@@ -98,8 +145,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(image, { status: 201 });
   } catch (error) {
     console.error('Error uploading image:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Error desconocido';
     return NextResponse.json(
-      { error: 'Failed to upload image' },
+      { error: `Error al subir la imagen: ${errorMessage}` },
       { status: 500 }
     );
   }
