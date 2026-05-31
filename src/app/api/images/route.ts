@@ -1,16 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import sharp from 'sharp';
+import { imageSize } from 'image-size';
 import { v4 as uuidv4 } from 'uuid';
 import { writeFile, mkdir } from 'fs/promises';
 import path from 'path';
 
-const UPLOAD_DIR = process.env.UPLOAD_DIR || path.join(process.cwd(), 'upload');
-
-// Use Node.js runtime for file system access (not Edge)
-export const runtime = 'nodejs';
-// Allow dynamic rendering
-export const dynamic = 'force-dynamic';
+// Upload directory: use /tmp on Vercel (read-only FS workaround), local upload dir otherwise
+const UPLOAD_DIR = process.env.VERCEL === '1'
+  ? path.join('/tmp', 'jolie-uploads')
+  : (process.env.UPLOAD_DIR || path.join(process.cwd(), 'upload'));
 
 export async function GET(request: NextRequest) {
   try {
@@ -55,14 +53,13 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    // Try to parse form data with better error handling
     let formData: FormData;
     try {
       formData = await request.formData();
     } catch (formError) {
       console.error('Error parsing form data:', formError);
       return NextResponse.json(
-        { error: 'No se pudo procesar el archivo. Intenta con una imagen más pequeña o formato diferente.' },
+        { error: 'No se pudo procesar el archivo.' },
         { status: 400 }
       );
     }
@@ -76,16 +73,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Validate file type - accept empty type (clipboard images may not have MIME type)
-    // We'll validate the actual image data with sharp later
     if (file.type && !file.type.startsWith('image/')) {
       return NextResponse.json(
-        { error: `El archivo "${file.name}" no es una imagen válida. Formatos aceptados: PNG, JPEG, WebP, GIF, etc.` },
+        { error: `El archivo "${file.name}" no es una imagen válida.` },
         { status: 400 }
       );
     }
 
-    // Validate file size (max 50MB)
     const MAX_SIZE = 50 * 1024 * 1024;
     if (file.size > MAX_SIZE) {
       return NextResponse.json(
@@ -94,34 +88,35 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Ensure upload directory exists
-    await mkdir(UPLOAD_DIR, { recursive: true });
-
-    // Generate unique filename
-    const ext = path.extname(file.name) || '.png';
-    const uniqueName = `${uuidv4()}${ext}`;
-    const filePath = path.join(UPLOAD_DIR, uniqueName);
-
-    // Save file to disk
+    // Read file into buffer
     const buffer = Buffer.from(await file.arrayBuffer());
-    await writeFile(filePath, buffer);
 
-    // Get image metadata using sharp
-    let metadata;
+    // Get image dimensions using image-size (lightweight, no native deps)
+    let width = 0;
+    let height = 0;
+    let format = '';
     try {
-      metadata = await sharp(filePath).metadata();
-    } catch (sharpError) {
-      console.error('Error reading image metadata:', sharpError);
-      // If sharp can't read the file, it might be corrupted
+      const dims = imageSize(buffer);
+      width = dims.width || 0;
+      height = dims.height || 0;
+      format = (dims.type as string) || path.extname(file.name).replace('.', '') || 'png';
+    } catch (dimError) {
+      console.error('Error reading image dimensions:', dimError);
       return NextResponse.json(
-        { error: `No se pudo leer la imagen "${file.name}". El archivo podría estar corrupto o en un formato no soportado.` },
+        { error: `No se pudo leer la imagen "${file.name}". Archivo corrupto o formato no soportado.` },
         { status: 400 }
       );
     }
 
-    const width = metadata.width || 0;
-    const height = metadata.height || 0;
-    const format = metadata.format || ext.replace('.', '');
+    // Generate unique filename
+    const ext = path.extname(file.name) || '.png';
+    const uniqueName = `${uuidv4()}${ext}`;
+
+    // Ensure upload directory exists and write file
+    await mkdir(UPLOAD_DIR, { recursive: true });
+    const filePath = path.join(UPLOAD_DIR, uniqueName);
+    await writeFile(filePath, buffer);
+
     const size = buffer.length;
 
     // Calculate aspect ratio
@@ -129,12 +124,11 @@ export async function POST(request: NextRequest) {
     const divisor = gcd(width, height);
     const aspectRatio = `${width / divisor}:${height / divisor}`;
 
-    // Save metadata to database
     const image = await db.image.create({
       data: {
         name: uniqueName,
         originalName: file.name,
-        path: filePath,
+        path: uniqueName,
         width,
         height,
         size,

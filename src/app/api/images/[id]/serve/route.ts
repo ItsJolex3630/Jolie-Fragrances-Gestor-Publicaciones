@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { readFile } from 'fs/promises';
+import path from 'path';
+
+const UPLOAD_DIR = process.env.VERCEL === '1'
+  ? path.join('/tmp', 'jolie-uploads')
+  : (process.env.UPLOAD_DIR || path.join(process.cwd(), 'upload'));
 
 const MIME_TYPES: Record<string, string> = {
   png: 'image/png',
@@ -28,7 +33,8 @@ export async function GET(
       return NextResponse.json({ error: 'Image not found' }, { status: 404 });
     }
 
-    const fileBuffer = await readFile(image.path);
+    const filePath = path.join(UPLOAD_DIR, image.path);
+    const fileBuffer = await readFile(filePath);
     const ext = image.format.toLowerCase();
     const contentType = MIME_TYPES[ext] || 'application/octet-stream';
 

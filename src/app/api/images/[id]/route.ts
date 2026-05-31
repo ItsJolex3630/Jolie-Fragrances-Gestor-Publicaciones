@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { unlink } from 'fs/promises';
+import path from 'path';
+
+const UPLOAD_DIR = process.env.VERCEL === '1'
+  ? path.join('/tmp', 'jolie-uploads')
+  : (process.env.UPLOAD_DIR || path.join(process.cwd(), 'upload'));
 
 export async function GET(
   request: NextRequest,
@@ -42,15 +47,13 @@ export async function DELETE(
       return NextResponse.json({ error: 'Image not found' }, { status: 404 });
     }
 
-    // Delete file from disk
     try {
-      await unlink(image.path);
+      const filePath = path.join(UPLOAD_DIR, image.path);
+      await unlink(filePath);
     } catch (fileError) {
-      console.error('Error deleting file from disk:', fileError);
-      // Continue even if file deletion fails (file might already be gone)
+      console.error('Error deleting file:', fileError);
     }
 
-    // Delete record from database
     await db.image.delete({
       where: { id },
     });

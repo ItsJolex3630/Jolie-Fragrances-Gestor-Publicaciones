@@ -32,7 +32,7 @@ model Image {
   id             String   @id @default(cuid())
   name           String
   originalName   String
-  path           String
+  path           String   // Relative path within upload dir (e.g., "abc123.png")
   width          Int
   height         Int
   size           Int

@@ -3,6 +3,10 @@ import { db } from '@/lib/db';
 import { readFile, stat } from 'fs/promises';
 import path from 'path';
 
+const UPLOAD_DIR = process.env.VERCEL === '1'
+  ? path.join('/tmp', 'jolie-uploads')
+  : (process.env.UPLOAD_DIR || path.join(process.cwd(), 'upload'));
+
 const MIME_TYPES: Record<string, string> = {
   png: 'image/png',
   jpeg: 'image/jpeg',
@@ -29,17 +33,12 @@ export async function GET(
       return NextResponse.json({ error: 'Image not found' }, { status: 404 });
     }
 
-    // Read file from disk
-    const fileBuffer = await readFile(image.path);
-
-    // Determine content type
+    const filePath = path.join(UPLOAD_DIR, image.path);
+    const fileBuffer = await readFile(filePath);
     const ext = image.format.toLowerCase();
     const contentType = MIME_TYPES[ext] || 'application/octet-stream';
+    const fileStat = await stat(filePath);
 
-    // Get file stats for content-length
-    const fileStat = await stat(image.path);
-
-    // Return as download with proper headers
     return new NextResponse(fileBuffer, {
       status: 200,
       headers: {
