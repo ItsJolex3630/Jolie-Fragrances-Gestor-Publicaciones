@@ -237,15 +237,19 @@ export default function Home() {
   const images = useMemo(() => {
     let result = [...allImages];
 
-    // Search filter (case-insensitive)
+    // Search filter (case-insensitive, matches visible fields only)
     if (search.trim()) {
       const q = search.toLowerCase().trim();
-      result = result.filter((img) =>
-        img.name.toLowerCase().includes(q) ||
-        img.originalName.toLowerCase().includes(q) ||
-        img.format.toLowerCase().includes(q) ||
-        img.aspectRatio.toLowerCase().includes(q)
-      );
+      result = result.filter((img) => {
+        const nameWithoutExt = img.originalName.replace(/\.[^/.]+$/, '').toLowerCase();
+        const searchStr = [
+          nameWithoutExt,           // "Vanilla Freak" (without extension)
+          img.format.toLowerCase(),  // "png", "jpg", etc.
+          img.aspectRatio,           // "1:1", "4:5", etc.
+          `${img.width}x${img.height}`, // "1080x1080"
+        ].join(' ');
+        return searchStr.includes(q);
+      });
     }
 
     // Sort
@@ -507,7 +511,7 @@ export default function Home() {
               <div className="relative group">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[#888] group-focus-within:text-[#d4af37] transition-colors" />
                 <Input
-                  placeholder="Buscar imagen por nombre..."
+                  placeholder="Buscar por nombre, formato o ratio..."
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   className="pl-9 pr-16 h-10 bg-[#111] border-[rgba(212,175,55,0.15)] text-white placeholder:text-[#555] focus:border-[#d4af37]/40 focus:ring-[#d4af37]/20 transition-all"
